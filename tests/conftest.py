@@ -6,13 +6,17 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "scripts"
+ONBOARD = ROOT / "skills" / "atlas-onboard"
+REVIEW = ROOT / "skills" / "atlas-review"
 SAMPLE_REPO = ROOT / "tests" / "sample_repo"
 
 
 def run_script(name: str, *args: str) -> subprocess.CompletedProcess:
+    script = ONBOARD / "scripts" / name
+    if not script.exists():
+        script = REVIEW / "scripts" / name
     return subprocess.run(
-        [sys.executable, str(SCRIPTS / name), *args],
+        [sys.executable, str(script), *args],
         capture_output=True, text=True,
     )
 
@@ -29,6 +33,88 @@ def index_output(tmp_path_factory) -> dict:
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(out.read_text())
+
+
+def make_review_artifact(idx: dict, artifact_id: str = "art_sample_review") -> dict:
+    """Build a valid review artifact from a --base diff index (duplicate-check-removed scenario)."""
+    symbols = {s["symbol_id"]: s for s in idx["index"]["symbols"]}
+
+    def ev(sid: str) -> dict:
+        s = symbols[sid]
+        return {
+            "symbol_id": sid,
+            "path": s["path"],
+            "range": s["range"],
+            "content_hash": s["content_hash"],
+        }
+
+    create = "python:orders.service:OrderService.create"
+    audit = "python:orders.service:audit_order"
+
+    return {
+        "schema_version": "2.0",
+        "artifact_id": artifact_id,
+        "type": "review",
+        "title": "review: duplicate check removed from OrderService.create",
+        "repository": {k: v for k, v in idx["repository"].items() if k != "root"},
+        "slice": idx["slice"],
+        "inputs": {"skill_version": "0.1.0", "schema_version": "2.0"},
+        "index": idx["index"],
+        "changes": idx["changes"],
+        "overview": {
+            "summary": (
+                "Intent (unconfirmed): simplify OrderService.create.\n\n"
+                "What changed: the duplicate check at the top of create was "
+                "removed, and a new audit_order function was added.\n\n"
+                "Impact: create no longer reads the idempotency_key before it "
+                "saves and charges. Every caller that relied on retry safety is "
+                "affected. Deterministic checks: pytest was not present in this "
+                "sample repository, so no test observes the old behavior."
+            ),
+        },
+        "findings": [
+            {
+                "id": "f-idempotency-lost",
+                "severity": "blocking",
+                "claim": (
+                    "create no longer checks idempotency_key, so a retried "
+                    "request creates a duplicate order and charges twice"
+                ),
+                "risk_scenario": (
+                    "A network retry delivers create twice with key idem_7f3a. "
+                    "Both calls save an order and both call gateway.charge, so "
+                    "the customer pays twice."
+                ),
+                "evidence": [ev(create)],
+                "missing_evidence": [],
+                "reproduction": (
+                    "Call create twice with the same idempotency_key and count "
+                    "the rows in the orders table."
+                ),
+                "suggested_verification": (
+                    "Add a test that calls create twice with one key and "
+                    "expects DuplicateOrderError on the second call."
+                ),
+                "verifier_verdict": "confirmed",
+            },
+            {
+                "id": "f-audit-untested",
+                "severity": "spotlight",
+                "claim": "audit_order is new and no test observes it",
+                "risk_scenario": (
+                    "The audit path's behavior is unobserved, so a regression "
+                    "in it would ship silently."
+                ),
+                "evidence": [ev(audit)],
+                "verifier_verdict": "inconclusive",
+            },
+        ],
+        "unknowns": [
+            "Intent is unconfirmed: the author may deliberately allow "
+            "duplicate orders. The blocking finding assumes retry safety is "
+            "still required."
+        ],
+    }
 
 
 def make_artifact(idx: dict, artifact_id: str = "art_sample_orders") -> dict:

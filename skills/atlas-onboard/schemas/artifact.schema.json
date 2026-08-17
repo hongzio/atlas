@@ -283,14 +283,17 @@
     },
     "findings": {
       "type": "array",
-      "maxItems": 8,
+      "maxItems": 12,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "severity", "claim", "risk_scenario", "evidence"],
         "properties": {
           "id": { "type": "string" },
-          "severity": { "enum": ["blocking", "warning"] },
+          "severity": {
+            "enum": ["blocking", "warning", "spotlight"],
+            "description": "spotlight: not a confirmed defect, but a change a human must inspect (PRD §13.6)"
+          },
           "claim": { "type": "string" },
           "risk_scenario": { "type": "string" },
           "evidence": { "$ref": "#/$defs/evidence_list" },

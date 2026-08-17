@@ -46,4 +46,4 @@ def test_template_version_recorded(index_output, tmp_path):
     out = tmp_path / "out.html"
     proc = run_script("atlas_render.py", str(src), "--out", str(out))
     assert proc.returncode == 0, proc.stderr
-    assert "template=0.7.0" in proc.stdout
+    assert "template=0.7.1" in proc.stdout

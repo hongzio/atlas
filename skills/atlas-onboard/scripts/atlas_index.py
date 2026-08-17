@@ -154,6 +154,41 @@ def git_head(root: Path) -> str:
     return sha
 
 
+def git_changed_files(root: Path, base: str) -> tuple[str, dict[str, str]]:
+    """Resolve base and list python files changed between base and the worktree.
+
+    Returns (base sha, {relpath: added|modified|removed}).
+    """
+    sha = subprocess.run(
+        ["git", "rev-parse", base], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    out = subprocess.run(
+        ["git", "diff", "--name-status", "--no-renames", sha, "--", "*.py"],
+        cwd=root, capture_output=True, text=True, check=True,
+    ).stdout
+    status_map = {"A": "added", "M": "modified", "D": "removed"}
+    changed: dict[str, str] = {}
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            changed[parts[-1]] = status_map.get(parts[0][0], "modified")
+    return sha, changed
+
+
+def base_symbols(root: Path, sha: str, relpath: str) -> dict[str, str]:
+    """Parse the base revision of one file. Returns {symbol_id: content_hash}."""
+    proc = subprocess.run(
+        ["git", "show", f"{sha}:{relpath}"], cwd=root, capture_output=True, check=False
+    )
+    if proc.returncode != 0:
+        print(f"warn: cannot read {relpath} at base: skipped", file=sys.stderr)
+        return {}
+    parser = Parser(PY_LANGUAGE)
+    tree = parser.parse(proc.stdout)
+    fi = Extractor(relpath, module_name(Path(relpath)), proc.stdout).run(tree.root_node)
+    return {s.symbol_id: s.content_hash for s in fi.symbols if s.kind != "module"}
+
+
 def is_excluded(relpath: Path, excludes: list[str]) -> bool:
     parts = set(relpath.parts)
     for pat in excludes:
@@ -651,8 +686,12 @@ def compute_slice(
 def main() -> int:
     ap = argparse.ArgumentParser(description="Atlas index: symbol/edge/reference + slice")
     ap.add_argument("--repo", required=True, help="target repository root")
-    ap.add_argument("--entry", action="append", required=True,
-                    help="entry point: file path or symbol name (repeatable)")
+    ap.add_argument("--entry", action="append", default=[],
+                    help="entry point: file path or symbol name (repeatable; "
+                         "optional when --base is set)")
+    ap.add_argument("--base",
+                    help="git revision to diff against (review mode): changed files "
+                         "become entry points and a changes summary is emitted")
     ap.add_argument("--hops", type=int, default=2)
     ap.add_argument("--exclude", action="append", default=[])
     ap.add_argument("--max-source-bytes", type=int, default=DEFAULT_MAX_SOURCE_BYTES)
@@ -664,6 +703,25 @@ def main() -> int:
         print(f"error: repo not found: {root}", file=sys.stderr)
         return 2
     excludes = DEFAULT_EXCLUDES + args.exclude
+
+    base_sha = None
+    changed_files: dict[str, str] = {}
+    if args.base:
+        try:
+            base_sha, changed_files = git_changed_files(root, args.base)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            detail = e.stderr.strip() if getattr(e, "stderr", None) else str(e)
+            print(f"error: cannot diff against {args.base}: {detail}", file=sys.stderr)
+            return 2
+    entries = args.entry + sorted(
+        p for p, s in changed_files.items() if s != "removed"
+    )
+    if not entries:
+        print(
+            "error: no entry points (pass --entry, or --base with python changes)",
+            file=sys.stderr,
+        )
+        return 2
 
     parser = Parser(PY_LANGUAGE)
     files: list[FileIndex] = []
@@ -688,7 +746,7 @@ def main() -> int:
     resolver.run()
 
     slice_paths, seed_ids, unmatched = compute_slice(
-        files, resolver.edges, args.entry, args.hops
+        files, resolver.edges, entries, args.hops
     )
     if not seed_ids:
         print(f"error: no entry matched: {args.entry}", file=sys.stderr)
@@ -741,6 +799,35 @@ def main() -> int:
         if r.path in slice_paths and r.symbol_id in kept_symbols
     ]
 
+    # review mode: symbol-level diff between base and worktree (schema `changes`)
+    changes = None
+    if base_sha is not None:
+        head_by_path: dict[str, dict[str, str]] = {}
+        for f in files:
+            if f.path in changed_files and changed_files[f.path] != "removed":
+                head_by_path[f.path] = {
+                    s.symbol_id: s.content_hash for s in f.symbols if s.kind != "module"
+                }
+        sym_changes: list[dict] = []
+        for path, status in sorted(changed_files.items()):
+            base_map = {} if status == "added" else base_symbols(root, base_sha, path)
+            head_map = head_by_path.get(path, {})
+            for sid, h in head_map.items():
+                if sid not in base_map:
+                    sym_changes.append({"symbol_id": sid, "change": "added"})
+                elif base_map[sid] != h:
+                    sym_changes.append({"symbol_id": sid, "change": "modified"})
+            for sid in base_map:
+                if sid not in head_map:
+                    sym_changes.append({"symbol_id": sid, "change": "removed"})
+        changes = {
+            "previous_head_commit": base_sha,
+            "files": [
+                {"path": p, "change": s} for p, s in sorted(changed_files.items())
+            ],
+            "symbols": sorted(sym_changes, key=lambda x: x["symbol_id"]),
+        }
+
     def range_json(start: tuple[int, int], end: tuple[int, int]) -> dict:
         return {
             "start_line": start[0], "start_character": start[1],
@@ -753,9 +840,11 @@ def main() -> int:
             "id": root.name,
             "root": str(root),
             "head_commit": git_head(root),
+            **({"base_commit": base_sha} if base_sha else {}),
         },
+        **({"changes": changes} if changes else {}),
         "slice": {
-            "entry_points": args.entry,
+            "entry_points": entries,
             "hop_limit": args.hops,
             "file_count": len(slice_files),
             "excludes": args.exclude,

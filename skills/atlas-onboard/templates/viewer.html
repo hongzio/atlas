@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.7.0 -->
+<!-- atlas-template-version: 0.7.1 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -622,7 +622,7 @@ document.addEventListener("click", e => {
 if ((A.findings || []).length) {
   let html = `<h2>Findings</h2>`;
   for (const f of A.findings) {
-    const cls = f.severity === "blocking" ? "rejected" : "stale";
+    const cls = { blocking: "rejected", warning: "stale", spotlight: "proposed" }[f.severity] || "stale";
     html += `<div class="card" id="bl-finding-${esc(f.id)}"><span class="badge ${cls}">${esc(f.severity)}</span> ` +
       `<b>${esc(f.claim)}</b>` +
       `<div style="margin-top:6px"><b class="muted">Risk:</b> ${esc(f.risk_scenario)}</div>` +
