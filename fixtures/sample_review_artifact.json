@@ -5,8 +5,8 @@
   "title": "review: duplicate check removed from OrderService.create",
   "repository": {
     "id": "repo",
-    "head_commit": "worktree:469cf2cfa1507a911c486baf48c9a83838915dad:8227662588919db6",
-    "base_commit": "469cf2cfa1507a911c486baf48c9a83838915dad"
+    "head_commit": "worktree:ff55e4b8196845219ff5799e8663f3fa35739379:8227662588919db6",
+    "base_commit": "ff55e4b8196845219ff5799e8663f3fa35739379"
   },
   "slice": {
     "entry_points": [
@@ -837,11 +837,12 @@
     ]
   },
   "changes": {
-    "previous_head_commit": "469cf2cfa1507a911c486baf48c9a83838915dad",
+    "previous_head_commit": "ff55e4b8196845219ff5799e8663f3fa35739379",
     "files": [
       {
         "path": "orders/service.py",
-        "change": "modified"
+        "change": "modified",
+        "base_source": "from orders.models import Order\nfrom orders.repository import OrderRepository\nfrom payments.gateway import PaymentGateway\n\n\nclass DuplicateOrderError(Exception):\n    pass\n\n\nclass OrderService:\n    \"\"\"Entry point for order creation. Prevents duplicates via idempotency_key.\"\"\"\n\n    def __init__(self, repo: OrderRepository, gateway: PaymentGateway):\n        self.repo = repo\n        self.gateway = gateway\n\n    def create(self, customer_id: str, amount_cents: int, idempotency_key: str) -> Order:\n        existing = self.repo.get(idempotency_key)\n        if existing is not None:\n            raise DuplicateOrderError(idempotency_key)\n\n        order = Order(customer_id=customer_id, amount_cents=amount_cents)\n        order.idempotency_key = idempotency_key\n        self.repo.save(order)\n\n        try:\n            self.gateway.charge(customer_id, amount_cents, idempotency_key)\n        except Exception:\n            order.mark_failed()\n            self.repo.save(order)\n            raise\n\n        order.mark_paid()\n        self.repo.save(order)\n        return order\n"
       }
     ],
     "symbols": [
@@ -862,6 +863,78 @@
   "overview": {
     "summary": "Intent (unconfirmed): simplify OrderService.create.\n\nWhat changed: the duplicate check at the top of create was removed, and a new audit_order function was added.\n\nImpact: create no longer reads the idempotency_key before it saves and charges. Every caller that relied on retry safety is affected. Deterministic checks: pytest was not present in this sample repository, so no test observes the old behavior."
   },
+  "flows": [
+    {
+      "id": "flow-create-change",
+      "title": "What this change does to the create path",
+      "summary": "Background first, then the change. Follow one request, cus_1442 paying 8900 cents under key idem_7f3a, through the base behavior and the new behavior.",
+      "steps": [
+        {
+          "title": "Background: what the base revision guaranteed",
+          "detail": "On the base revision, create opened with a guard. It called repo.get(idempotency_key) and raised DuplicateOrderError when an order already existed under that key. The guard was the only defense against double charging: a network retry could deliver the same call twice, and the key idem_7f3a mapped to at most one order. Nothing else in the flow checks the key.",
+          "evidence": [
+            {
+              "symbol_id": "python:orders.service:OrderService.create",
+              "path": "orders/service.py",
+              "range": {
+                "start_line": 17,
+                "start_character": 4,
+                "end_line": 32,
+                "end_character": 20
+              },
+              "content_hash": "sha256:45fa7373d70ac1cbd0e3db58cc8c464633b258361d95f72f08868816354d723b"
+            },
+            {
+              "symbol_id": "python:orders.repository:OrderRepository.get",
+              "path": "orders/repository.py",
+              "range": {
+                "start_line": 23,
+                "start_character": 4,
+                "end_line": 32,
+                "end_character": 20
+              },
+              "content_hash": "sha256:4ba5a83f9dd74085d718fbf31de1db3c050e07d51bf079439a9ace0e2859e31c"
+            }
+          ]
+        },
+        {
+          "title": "The change: guard removed, audit added",
+          "detail": "The diff deletes that guard, so create now builds and saves the Order immediately. The stated intent is to simplify create, but the intent is unconfirmed. The diff also adds audit_order, which returns the key of an order. No caller uses audit_order yet, so the simplification did not need the guard removed.",
+          "branches": [
+            {
+              "condition": "the same idempotency_key arrives twice",
+              "outcome": "base: second call raises DuplicateOrderError. now: both calls save an order and both charge, so cus_1442 pays 8900 cents twice."
+            }
+          ],
+          "error_path": "Unchanged: ChargeFailedError still marks the order FAILED, saves it, and re-raises.",
+          "evidence": [
+            {
+              "symbol_id": "python:orders.service:OrderService.create",
+              "path": "orders/service.py",
+              "range": {
+                "start_line": 17,
+                "start_character": 4,
+                "end_line": 32,
+                "end_character": 20
+              },
+              "content_hash": "sha256:45fa7373d70ac1cbd0e3db58cc8c464633b258361d95f72f08868816354d723b"
+            },
+            {
+              "symbol_id": "python:orders.service:audit_order",
+              "path": "orders/service.py",
+              "range": {
+                "start_line": 35,
+                "start_character": 0,
+                "end_line": 36,
+                "end_character": 32
+              },
+              "content_hash": "sha256:efd89d33faa7aee7c5ec40b4eb95b55f79396db28c5353ee387236f1c3b36fc7"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "findings": [
     {
       "id": "f-idempotency-lost",

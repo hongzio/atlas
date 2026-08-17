@@ -175,18 +175,23 @@ def git_changed_files(root: Path, base: str) -> tuple[str, dict[str, str]]:
     return sha, changed
 
 
-def base_symbols(root: Path, sha: str, relpath: str) -> dict[str, str]:
-    """Parse the base revision of one file. Returns {symbol_id: content_hash}."""
+def base_file(root: Path, sha: str, relpath: str) -> tuple[dict[str, str], str | None]:
+    """Parse the base revision of one file.
+
+    Returns ({symbol_id: content_hash}, base source text). The source feeds the
+    viewer's side-by-side diff.
+    """
     proc = subprocess.run(
         ["git", "show", f"{sha}:{relpath}"], cwd=root, capture_output=True, check=False
     )
     if proc.returncode != 0:
         print(f"warn: cannot read {relpath} at base: skipped", file=sys.stderr)
-        return {}
+        return {}, None
     parser = Parser(PY_LANGUAGE)
     tree = parser.parse(proc.stdout)
     fi = Extractor(relpath, module_name(Path(relpath)), proc.stdout).run(tree.root_node)
-    return {s.symbol_id: s.content_hash for s in fi.symbols if s.kind != "module"}
+    symbols = {s.symbol_id: s.content_hash for s in fi.symbols if s.kind != "module"}
+    return symbols, proc.stdout.decode("utf-8", errors="replace")
 
 
 def is_excluded(relpath: Path, excludes: list[str]) -> bool:
@@ -809,8 +814,14 @@ def main() -> int:
                     s.symbol_id: s.content_hash for s in f.symbols if s.kind != "module"
                 }
         sym_changes: list[dict] = []
+        base_sources: dict[str, str] = {}
         for path, status in sorted(changed_files.items()):
-            base_map = {} if status == "added" else base_symbols(root, base_sha, path)
+            if status == "added":
+                base_map: dict[str, str] = {}
+            else:
+                base_map, base_src = base_file(root, base_sha, path)
+                if base_src is not None:
+                    base_sources[path] = base_src
             head_map = head_by_path.get(path, {})
             for sid, h in head_map.items():
                 if sid not in base_map:
@@ -823,7 +834,14 @@ def main() -> int:
         changes = {
             "previous_head_commit": base_sha,
             "files": [
-                {"path": p, "change": s} for p, s in sorted(changed_files.items())
+                {
+                    "path": p,
+                    "change": s,
+                    **(
+                        {"base_source": base_sources[p]} if p in base_sources else {}
+                    ),
+                }
+                for p, s in sorted(changed_files.items())
             ],
             "symbols": sorted(sym_changes, key=lambda x: x["symbol_id"]),
         }

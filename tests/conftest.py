@@ -50,6 +50,7 @@ def make_review_artifact(idx: dict, artifact_id: str = "art_sample_review") -> d
 
     create = "python:orders.service:OrderService.create"
     audit = "python:orders.service:audit_order"
+    get = "python:orders.repository:OrderRepository.get"
 
     return {
         "schema_version": "2.0",
@@ -72,6 +73,58 @@ def make_review_artifact(idx: dict, artifact_id: str = "art_sample_review") -> d
                 "sample repository, so no test observes the old behavior."
             ),
         },
+        "flows": [
+            {
+                "id": "flow-create-change",
+                "title": "What this change does to the create path",
+                "summary": (
+                    "Background first, then the change. Follow one request, "
+                    "cus_1442 paying 8900 cents under key idem_7f3a, through "
+                    "the base behavior and the new behavior."
+                ),
+                "steps": [
+                    {
+                        "title": "Background: what the base revision guaranteed",
+                        "detail": (
+                            "On the base revision, create opened with a guard. It "
+                            "called repo.get(idempotency_key) and raised "
+                            "DuplicateOrderError when an order already existed under "
+                            "that key. The guard was the only defense against double "
+                            "charging: a network retry could deliver the same call "
+                            "twice, and the key idem_7f3a mapped to at most one "
+                            "order. Nothing else in the flow checks the key."
+                        ),
+                        "evidence": [ev(create), ev(get)],
+                    },
+                    {
+                        "title": "The change: guard removed, audit added",
+                        "detail": (
+                            "The diff deletes that guard, so create now builds and "
+                            "saves the Order immediately. The stated intent is to "
+                            "simplify create, but the intent is unconfirmed. The "
+                            "diff also adds audit_order, which returns the key of "
+                            "an order. No caller uses audit_order yet, so the "
+                            "simplification did not need the guard removed."
+                        ),
+                        "branches": [
+                            {
+                                "condition": "the same idempotency_key arrives twice",
+                                "outcome": (
+                                    "base: second call raises DuplicateOrderError. "
+                                    "now: both calls save an order and both charge, "
+                                    "so cus_1442 pays 8900 cents twice."
+                                ),
+                            }
+                        ],
+                        "error_path": (
+                            "Unchanged: ChargeFailedError still marks the order "
+                            "FAILED, saves it, and re-raises."
+                        ),
+                        "evidence": [ev(create), ev(audit)],
+                    },
+                ],
+            }
+        ],
         "findings": [
             {
                 "id": "f-idempotency-lost",

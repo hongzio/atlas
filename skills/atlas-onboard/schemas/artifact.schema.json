@@ -321,7 +321,11 @@
             "required": ["path", "change"],
             "properties": {
               "path": { "type": "string" },
-              "change": { "enum": ["added", "removed", "modified"] }
+              "change": { "enum": ["added", "removed", "modified"] },
+              "base_source": {
+                "type": "string",
+                "description": "File content at the base revision. Feeds the viewer's side-by-side diff."
+              }
             }
           }
         },

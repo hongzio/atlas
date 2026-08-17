@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.7.4 -->
+<!-- atlas-template-version: 0.8.1 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -322,6 +322,42 @@ table.diff th {
 table.diff td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
 table.diff tr:last-child td { border-bottom: none; }
 table.diff td.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+/* ---- side-by-side diff ---- */
+.sxs-file { margin: 12px 0; }
+.sxs-file summary {
+  cursor: pointer; font-family: ui-monospace, monospace; font-size: 12.5px;
+  padding: 4px 0; user-select: none;
+}
+.sxs-file summary:hover { color: var(--accent); }
+.sxs-wrap { margin-top: 6px; }
+.sxs {
+  /* minmax(0,1fr): long lines wrap inside their column instead of pushing
+     the right column off screen */
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border: 1px solid var(--line); border-radius: var(--r-ctl);
+  overflow: hidden; background: var(--code-bg);
+}
+.sxs-line { display: flex; min-width: 0; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sxs-line:nth-child(even) { border-left: 1px solid var(--line); }
+.sxs-line .ln {
+  flex: none; width: 42px; text-align: right; padding-right: 8px;
+  color: var(--muted); user-select: none; font-variant-numeric: tabular-nums;
+}
+.sxs-line .lc { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 10px; min-width: 0; }
+.bl-refs {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 2px;
+}
+.bl-refs-label {
+  font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+}
+.sxs-line.del { background: color-mix(in srgb, var(--bad) 11%, transparent); }
+.sxs-line.add { background: color-mix(in srgb, var(--ok) 11%, transparent); }
+.sxs-line.empty { background: color-mix(in srgb, var(--muted) 7%, transparent); }
+.sxs-skip {
+  grid-column: 1 / -1; text-align: center; color: var(--muted);
+  font-size: 11px; padding: 3px 0; background: var(--panel);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
 /* ---- mobile: sidebar becomes an off-canvas drawer ---- */
 @media (max-width: 768px) {
   header { padding: 8px 12px; gap: 10px; }
@@ -490,6 +526,21 @@ el("foot").innerHTML = [
   A.previous_artifact_id ? `prev ${esc(A.previous_artifact_id)}` : "",
 ].filter(Boolean).map(x => `<span>${x}</span>`).join("");
 
+/* paths changed in this run (review/incremental): used to offer diff links */
+const changedPaths = new Set(((A.changes || {}).files || []).map(f => f.path));
+function diffChipsHtml(step) {
+  if (!changedPaths.size) return "";
+  const paths = new Set();
+  const collect = evs => (evs || []).forEach(ev => {
+    if (changedPaths.has(ev.path)) paths.add(ev.path);
+  });
+  collect(step.evidence);
+  (step.branches || []).forEach(b => collect(b.evidence));
+  if (!paths.size) return "";
+  return `<div class="chips">` + [...paths].map(p =>
+    `<button class="chip" data-diff="${esc(p)}">diff: ${esc(p)}</button>`).join("") + `</div>`;
+}
+
 /* ---------------- evidence chip ---------------- */
 function chipsHtml(evs) {
   if (!evs || !evs.length) return "";
@@ -564,7 +615,7 @@ document.addEventListener("click", e => {
         html += `<div class="branch"><b>${esc(br.condition)}</b> → ${esc(br.outcome)}${chipsHtml(br.evidence)}</div>`;
       }
       if (st.error_path) html += `<div class="errorpath">✕ ${esc(st.error_path)}</div>`;
-      html += chipsHtml(st.evidence) + `</div></div>`;
+      html += chipsHtml(st.evidence) + diffChipsHtml(st) + `</div></div>`;
     });
   }
   el("tab-flows").innerHTML = html || `<div class="muted pad">No flows</div>`;
@@ -643,12 +694,66 @@ if ((A.findings || []).length) {
       (f.suggested_verification ? `<div style="margin-top:4px"><b class="muted">Verify:</b> ${esc(f.suggested_verification)}</div>` : "") +
       ((f.missing_evidence || []).length ? `<div style="margin-top:4px"><b class="muted">Missing:</b> ${f.missing_evidence.map(esc).join("; ")}</div>` : "") +
       (f.verifier_verdict ? `<div style="margin-top:4px"><b class="muted">Verifier:</b> ${esc(f.verifier_verdict)}</div>` : "") +
-      chipsHtml(f.evidence) + `</div>`;
+      chipsHtml(f.evidence) + diffChipsHtml(f) + `</div>`;
   }
   el("tab-review").innerHTML = html;
 }
 
 /* ---------------- Diff ---------------- */
+/* line-level LCS diff for the side-by-side view (plain text, no syntax colors:
+   the add/del tint carries the information) */
+function diffLines(aText, bText) {
+  const a = aText.split("\n"), b = bText.split("\n");
+  if (a.length * b.length > 4000000) return null;
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const rows = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { rows.push({ t: "same", ai: i, bi: j }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { rows.push({ t: "del", ai: i }); i++; }
+    else { rows.push({ t: "add", bi: j }); j++; }
+  }
+  while (i < n) rows.push({ t: "del", ai: i++ });
+  while (j < m) rows.push({ t: "add", bi: j++ });
+  return rows;
+}
+function sxsHtml(baseText, headText) {
+  const a = (baseText ?? "").split("\n"), b = (headText ?? "").split("\n");
+  let rows;
+  if (baseText == null) rows = b.map((_, k) => ({ t: "add", bi: k }));
+  else if (headText == null) rows = a.map((_, k) => ({ t: "del", ai: k }));
+  else rows = diffLines(baseText, headText);
+  if (!rows) return `<div class="muted">File too large for a side-by-side diff.</div>`;
+  const keep = new Array(rows.length).fill(false);
+  rows.forEach((r, k) => {
+    if (r.t !== "same") {
+      for (let d = -3; d <= 3; d++) if (rows[k + d]) keep[k + d] = true;
+    }
+  });
+  const cell = (cls, ln, text) =>
+    `<div class="sxs-line${cls ? " " + cls : ""}"><span class="ln">${ln ?? ""}</span>` +
+    `<span class="lc">${text === undefined ? "" : esc(text) || " "}</span></div>`;
+  let html = "", hidden = 0;
+  const flush = () => {
+    if (hidden) { html += `<div class="sxs-skip">${hidden} unchanged lines</div>`; hidden = 0; }
+  };
+  for (let k = 0; k < rows.length; k++) {
+    const r = rows[k];
+    if (!keep[k]) { hidden++; continue; }
+    flush();
+    if (r.t === "same") html += cell("", r.ai + 1, a[r.ai]) + cell("", r.bi + 1, b[r.bi]);
+    else if (r.t === "del") html += cell("del", r.ai + 1, a[r.ai]) + cell("empty");
+    else html += cell("empty") + cell("add", r.bi + 1, b[r.bi]);
+  }
+  flush();
+  return `<div class="sxs-wrap"><div class="sxs">${html}</div></div>`;
+}
 if (A.changes) {
   const C = A.changes;
   let html = `<h2>Since last run</h2>` +
@@ -663,9 +768,22 @@ if (A.changes) {
         `<td>${esc(s.note || "")}</td></tr>`).join("") + `</table></div>`;
   }
   if ((C.files || []).length) {
-    html += `<h2>Files</h2><div class="card"><table class="diff">` +
-      C.files.map(f => `<tr><td><span class="badge ${esc(f.change)}">${esc(f.change)}</span></td>` +
-        `<td class="mono">${esc(f.path)}</td></tr>`).join("") + `</table></div>`;
+    if (C.files.some(f => f.base_source !== undefined || filesByPath.has(f.path))) {
+      html += `<h2>Changed files</h2>` +
+        `<div class="legend">Base revision on the left, current on the right.</div>` +
+        C.files.map((f, i) => {
+          const head = filesByPath.has(f.path) ? filesByPath.get(f.path).source : null;
+          const base = f.base_source !== undefined ? f.base_source : null;
+          return `<details class="sxs-file"${i === 0 ? " open" : ""} data-path="${esc(f.path)}">` +
+            `<summary><span class="badge ${esc(f.change)}">${esc(f.change)}</span> ${esc(f.path)}</summary>` +
+            `<div class="bl-refs" data-bl-path="${esc(f.path)}"></div>` +
+            sxsHtml(base, head) + `</details>`;
+        }).join("");
+    } else {
+      html += `<h2>Files</h2><div class="card"><table class="diff">` +
+        C.files.map(f => `<tr><td><span class="badge ${esc(f.change)}">${esc(f.change)}</span></td>` +
+          `<td class="mono">${esc(f.path)}</td></tr>`).join("") + `</table></div>`;
+    }
   }
   if ((C.stale_items || []).length) {
     html += `<h2>Stale candidates</h2><div class="card"><ul class="plain">` +
@@ -832,6 +950,38 @@ function toggleBacklinkPanel(lineEl, entries) {
   });
   lineEl.after(panel);
 }
+function openDiffFile(path) {
+  navStack.push(snapshot());
+  if (navStack.length > 100) navStack.shift();
+  showTab("diff");
+  setHash();
+  const det = [...document.querySelectorAll("#tab-diff details.sxs-file")]
+    .find(d => d.dataset.path === path);
+  if (det) {
+    det.open = true;
+    det.scrollIntoView({ block: "start" });
+    det.classList.add("bl-hit");
+    setTimeout(() => det.classList.remove("bl-hit"), 1600);
+  }
+}
+/* Diff tab: show which narrative items reference each changed file */
+document.querySelectorAll("#tab-diff [data-bl-path]").forEach(slot => {
+  const m = backlinksByPath.get(slot.dataset.blPath);
+  const entries = [];
+  if (m) {
+    for (const arr of m.values()) {
+      for (const e of arr) {
+        if (!entries.some(x => x.anchor === e.anchor)) entries.push(e);
+      }
+    }
+  }
+  if (!entries.length) { slot.remove(); return; }
+  slot.innerHTML = `<span class="bl-refs-label">Referenced by</span>` +
+    entries.map((e, i) => `<button class="chip" data-ref="${i}">${esc(e.label)}</button>`).join("");
+  slot.querySelectorAll("button").forEach((b, i) => {
+    b.onclick = () => openBacklink(entries[i]);
+  });
+});
 
 /* ---------------- Code pane ---------------- */
 function renderFile(path) {
@@ -903,6 +1053,8 @@ function openSymbol(symId) {
   showSymbolInfo(s);
 }
 document.addEventListener("click", e => {
+  const dc = e.target.closest(".chip[data-diff]");
+  if (dc) { openDiffFile(dc.dataset.diff); return; }
   const bm = e.target.closest(".blmark[data-l]");
   if (bm) {
     toggleBacklinkPanel(bm.closest(".line"), backlinksAt(currentPath, +bm.dataset.l));

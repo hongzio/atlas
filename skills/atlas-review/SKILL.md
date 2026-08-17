@@ -113,7 +113,17 @@ Write JSON conforming to `$ATLAS/schemas/artifact.schema.json`:
   `changes` from index.json into the `changes` field
 - `findings` within the budget from principle 1; `spotlight` items do not
   count against it
-- optionally one `flows` entry tracing the changed execution path
+- at least one `flows` entry that narrates the change, not the code. The
+  reader must learn the background, what changed, why, and how behavior
+  differs:
+  - the first step gives the background: how the base revision behaved on
+    this path and what it guaranteed
+  - the following steps explain what the diff changed, why (from the locked
+    intent; mark unconfirmed intent as such), and how the path behaves now
+  - use `branches` to contrast outcomes: same input, base outcome versus
+    current outcome
+  - reuse the diff's concrete example data so the reader follows one
+    request through before and after
 - `inputs.skill_version`: this file's version
 
 If nothing survives scrutiny, return zero findings and say "no verified

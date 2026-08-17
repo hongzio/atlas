@@ -59,6 +59,9 @@ def test_base_diff_detects_changed_symbols(tmp_path):
     assert idx["repository"]["base_commit"] == idx["changes"]["previous_head_commit"]
     files = {f["path"]: f["change"] for f in idx["changes"]["files"]}
     assert files == {"orders/service.py": "modified"}
+    # base source is embedded for the side-by-side diff
+    (entry,) = idx["changes"]["files"]
+    assert "DuplicateOrderError(idempotency_key)" in entry["base_source"]
 
 
 def test_review_artifact_validates_and_renders(tmp_path):
