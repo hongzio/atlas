@@ -5,8 +5,8 @@
   "title": "review: duplicate check removed from OrderService.create",
   "repository": {
     "id": "repo",
-    "head_commit": "worktree:ff55e4b8196845219ff5799e8663f3fa35739379:8227662588919db6",
-    "base_commit": "ff55e4b8196845219ff5799e8663f3fa35739379"
+    "head_commit": "worktree:6e7950cbfe6d6bda15022f832ae4d05a59c10057:8227662588919db6",
+    "base_commit": "6e7950cbfe6d6bda15022f832ae4d05a59c10057"
   },
   "slice": {
     "entry_points": [
@@ -837,7 +837,7 @@
     ]
   },
   "changes": {
-    "previous_head_commit": "ff55e4b8196845219ff5799e8663f3fa35739379",
+    "previous_head_commit": "6e7950cbfe6d6bda15022f832ae4d05a59c10057",
     "files": [
       {
         "path": "orders/service.py",
@@ -860,6 +860,38 @@
       }
     ]
   },
+  "invariants": [
+    {
+      "id": "inv-idempotency",
+      "statement": "The same idempotency_key never creates two orders",
+      "rationale": "The base revision enforced this with the guard at the top of create: repo.get(idempotency_key) followed by DuplicateOrderError. This diff removes the guard, so the invariant no longer holds.",
+      "status": "proposed",
+      "evidence": [
+        {
+          "symbol_id": "python:orders.service:OrderService.create",
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 17,
+            "start_character": 4,
+            "end_line": 32,
+            "end_character": 20
+          },
+          "content_hash": "sha256:45fa7373d70ac1cbd0e3db58cc8c464633b258361d95f72f08868816354d723b"
+        },
+        {
+          "symbol_id": "python:orders.repository:OrderRepository.get",
+          "path": "orders/repository.py",
+          "range": {
+            "start_line": 23,
+            "start_character": 4,
+            "end_line": 32,
+            "end_character": 20
+          },
+          "content_hash": "sha256:4ba5a83f9dd74085d718fbf31de1db3c050e07d51bf079439a9ace0e2859e31c"
+        }
+      ]
+    }
+  ],
   "overview": {
     "summary": "Intent (unconfirmed): simplify OrderService.create.\n\nWhat changed: the duplicate check at the top of create was removed, and a new audit_order function was added.\n\nImpact: create no longer reads the idempotency_key before it saves and charges. Every caller that relied on retry safety is affected. Deterministic checks: pytest was not present in this sample repository, so no test observes the old behavior."
   },

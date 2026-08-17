@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.8.1 -->
+<!-- atlas-template-version: 0.8.2 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -488,8 +488,9 @@ function h(html) { const t = document.createElement("template"); t.innerHTML = h
 /* ---------------- tabs ---------------- */
 const TABS = [
   ["overview", "Overview"], ["flows", "Flows"], ["graph", "Graph"], ["code", "Code"],
-  ["knowledge", "Knowledge"], ["lessons", "Lessons"],
+  ["knowledge", "Knowledge"],
 ];
+if (A.type !== "review") TABS.push(["lessons", "Lessons"]);  // lessons are a learning device
 if (A.changes) TABS.push(["diff", "Diff"]);
 if ((A.findings || []).length) TABS.push(["review", "Review"]);
 let activeTab = "overview";

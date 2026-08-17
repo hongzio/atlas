@@ -101,6 +101,13 @@ Write candidate findings. Each finding needs: `claim`, `risk_scenario`
 index), `missing_evidence`, and where possible `reproduction` and
 `suggested_verification`.
 
+Record the guarantees the diff touches in `invariants` (status `proposed`),
+whether the change preserves or breaks them. State in `rationale` how the
+base revision enforced the invariant and what this diff does to it. A
+finding that claims a violation cites the same evidence as its invariant.
+This is how review feeds the knowledge loop: later onboarding and review
+runs reuse approved invariants.
+
 ### 5. Assemble the artifact
 
 Write JSON conforming to `$ATLAS/schemas/artifact.schema.json`:
@@ -113,6 +120,9 @@ Write JSON conforming to `$ATLAS/schemas/artifact.schema.json`:
   `changes` from index.json into the `changes` field
 - `findings` within the budget from principle 1; `spotlight` items do not
   count against it
+- `invariants` for the guarantees the diff touches (step 4). Do not write
+  `lessons`: they are a learning device and the viewer hides that tab for
+  review artifacts
 - at least one `flows` entry that narrates the change, not the code. The
   reader must learn the background, what changed, why, and how behavior
   differs:

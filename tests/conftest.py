@@ -62,6 +62,20 @@ def make_review_artifact(idx: dict, artifact_id: str = "art_sample_review") -> d
         "inputs": {"skill_version": "0.1.0", "schema_version": "2.0"},
         "index": idx["index"],
         "changes": idx["changes"],
+        "invariants": [
+            {
+                "id": "inv-idempotency",
+                "statement": "The same idempotency_key never creates two orders",
+                "rationale": (
+                    "The base revision enforced this with the guard at the top "
+                    "of create: repo.get(idempotency_key) followed by "
+                    "DuplicateOrderError. This diff removes the guard, so the "
+                    "invariant no longer holds."
+                ),
+                "status": "proposed",
+                "evidence": [ev(create), ev(get)],
+            }
+        ],
         "overview": {
             "summary": (
                 "Intent (unconfirmed): simplify OrderService.create.\n\n"
