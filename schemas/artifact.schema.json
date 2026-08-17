@@ -1,0 +1,464 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas.dev/schemas/artifact.schema.json",
+  "title": "Atlas Artifact Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "type",
+    "title",
+    "repository",
+    "slice",
+    "inputs",
+    "index",
+    "overview"
+  ],
+  "properties": {
+    "schema_version": { "const": "2.0" },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^art_[a-z0-9_-]{4,}$"
+    },
+    "type": { "enum": ["learning", "review"] },
+    "title": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "head_commit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "root": { "type": "string" },
+        "base_commit": { "type": "string" },
+        "head_commit": {
+          "type": "string",
+          "description": "commit sha, or a worktree synthetic revision (worktree:<base>:<patch_hash>)"
+        }
+      }
+    },
+    "slice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry_points", "hop_limit", "file_count"],
+      "properties": {
+        "entry_points": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "hop_limit": { "type": "integer", "minimum": 0 },
+        "file_count": { "type": "integer", "minimum": 0 },
+        "excludes": { "type": "array", "items": { "type": "string" } },
+        "truncations": {
+          "type": "array",
+          "description": "Items dropped by the size budget etc. Silent truncation is forbidden (PRD §8.3)",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill_version", "schema_version"],
+      "properties": {
+        "skill_version": { "type": "string" },
+        "schema_version": { "type": "string" },
+        "template_version": {
+          "type": "string",
+          "description": "Recorded by the render script at render time"
+        },
+        "model": { "type": "string" },
+        "generated_at": { "type": "string" },
+        "tool_versions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "previous_artifact_id": {
+      "type": "string",
+      "description": "incremental update chain (PRD §15.3)"
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "symbols", "edges", "references"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "language", "sha256", "source"],
+            "properties": {
+              "path": { "type": "string" },
+              "language": { "type": "string" },
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "source": { "type": "string" }
+            }
+          }
+        },
+        "symbols": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/symbol" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "references": {
+          "type": "array",
+          "description": "Clickable span in the code pane → target symbol",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "range", "symbol_id"],
+            "properties": {
+              "path": { "type": "string" },
+              "range": { "$ref": "#/$defs/range" },
+              "symbol_id": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "overview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "What the subsystem does and where to start reading"
+        },
+        "architecture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["modules"],
+          "properties": {
+            "modules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "label"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "label": { "type": "string" },
+                  "path": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["from", "to"],
+                "properties": {
+                  "from": { "type": "string" },
+                  "to": { "type": "string" },
+                  "kind": { "type": "string" },
+                  "label": {
+                    "type": "string",
+                    "description": "What flows along this edge: the call or message with its parameters"
+                  },
+                  "example": {
+                    "type": "string",
+                    "description": "One concrete example of the data on this edge, with realistic values"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "steps"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/flow_step" }
+          }
+        }
+      }
+    },
+    "concepts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "definition"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "definition": { "type": "string" },
+          "contrast_with": {
+            "type": "string",
+            "description": "How this differs from an easily confused neighboring concept"
+          },
+          "evidence": { "$ref": "#/$defs/evidence_list" }
+        }
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement", "status", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "statement": { "type": "string" },
+          "rationale": { "type": "string" },
+          "status": {
+            "enum": ["proposed", "approved", "rejected", "stale", "reconfirmed", "hypothesis", "unknown"]
+          },
+          "evidence": { "$ref": "#/$defs/evidence_list" },
+          "validated_by_tests": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "lessons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "predict": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["question", "reveal"],
+            "properties": {
+              "question": { "type": "string" },
+              "reveal": { "type": "string" },
+              "evidence": { "$ref": "#/$defs/evidence_list" }
+            }
+          }
+        },
+        "explain_back": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["prompt"],
+            "properties": {
+              "prompt": { "type": "string" },
+              "rubric": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Grading criteria for the evaluator. The generating agent's own prose is not the answer key (PRD §14.4)"
+              }
+            }
+          }
+        },
+        "localization": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["task", "answer"],
+            "properties": {
+              "task": { "type": "string" },
+              "answer": { "type": "string" },
+              "evidence": { "$ref": "#/$defs/evidence_list" }
+            }
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "claim", "risk_scenario", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "severity": { "enum": ["blocking", "warning"] },
+          "claim": { "type": "string" },
+          "risk_scenario": { "type": "string" },
+          "evidence": { "$ref": "#/$defs/evidence_list" },
+          "missing_evidence": { "type": "array", "items": { "type": "string" } },
+          "reproduction": { "type": "string" },
+          "suggested_verification": { "type": "string" },
+          "verifier_verdict": {
+            "enum": ["confirmed", "refuted", "inconclusive"]
+          }
+        }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "description": "Changes vs the previous run, computed by the update script during incremental update (diff view data)",
+      "additionalProperties": false,
+      "required": ["previous_head_commit", "symbols"],
+      "properties": {
+        "previous_head_commit": { "type": "string" },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "change"],
+            "properties": {
+              "path": { "type": "string" },
+              "change": { "enum": ["added", "removed", "modified"] }
+            }
+          }
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol_id", "change"],
+            "properties": {
+              "symbol_id": { "type": "string" },
+              "change": { "enum": ["added", "removed", "modified"] },
+              "note": {
+                "type": "string",
+                "description": "One-line meaning of the change, written by the agent after re-investigation"
+              }
+            }
+          }
+        },
+        "stale_items": {
+          "type": "array",
+          "description": "flow/concept/invariant ids made stale by the changes",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "description": "Things that could not be verified. Stated explicitly instead of guessed (PRD §19)",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_line", "end_line"],
+      "description": "lines are 1-based, characters are 0-based",
+      "properties": {
+        "start_line": { "type": "integer", "minimum": 1 },
+        "start_character": { "type": "integer", "minimum": 0 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "end_character": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol_id", "kind", "name", "path", "range", "content_hash", "in_slice"],
+      "properties": {
+        "symbol_id": {
+          "type": "string",
+          "description": "python:<module>:<qualname>"
+        },
+        "kind": { "enum": ["module", "class", "function", "method"] },
+        "name": { "type": "string" },
+        "qualname": { "type": "string" },
+        "path": { "type": "string" },
+        "range": { "$ref": "#/$defs/range" },
+        "content_hash": { "$ref": "#/$defs/sha256" },
+        "signature": { "type": "string" },
+        "parent": { "type": "string" },
+        "in_slice": {
+          "type": "boolean",
+          "description": "false means boundary stub — only name/signature provided (PRD §9.3)"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "kind"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "kind": { "enum": ["calls", "imports", "contains"] },
+        "resolution": {
+          "enum": ["exact", "name_match", "unresolved"],
+          "description": "Certainty of tree-sitter-based resolution. Dynamic paths stay unresolved (PRD §16)"
+        },
+        "site": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "range"],
+          "properties": {
+            "path": { "type": "string" },
+            "range": { "$ref": "#/$defs/range" }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "range"],
+      "description": "PRD §15.4 evidence pointer",
+      "properties": {
+        "symbol_id": { "type": "string" },
+        "path": { "type": "string" },
+        "range": { "$ref": "#/$defs/range" },
+        "content_hash": { "$ref": "#/$defs/sha256" },
+        "excerpt": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "evidence_list": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "flow_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "detail", "evidence"],
+      "properties": {
+        "title": { "type": "string" },
+        "detail": {
+          "type": "string",
+          "minLength": 80,
+          "description": "What is called and with what values, branch conditions, state changes, error path. One-line summaries forbidden (PRD §14.2) — minLength mechanically enforces minimum depth"
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["condition", "outcome"],
+            "properties": {
+              "condition": { "type": "string" },
+              "outcome": { "type": "string" },
+              "evidence": { "$ref": "#/$defs/evidence_list" }
+            }
+          }
+        },
+        "error_path": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence_list" }
+      }
+    }
+  }
+}

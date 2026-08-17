@@ -1,0 +1,1058 @@
+<!doctype html>
+<!-- atlas-template-version: 0.6.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__ATLAS_TITLE__</title>
+<style>
+/* Design language: calm IDE-adjacent tool UI. Warm paper light / ink dark.
+   One accent (blue). Radius system: --r-ctl (controls) / --r-box (containers);
+   circles only for numbered step counters. Motion is feedback-only and gated
+   behind prefers-reduced-motion. */
+:root {
+  --bg: #f6f5f1; --panel: #fdfdfb; --ink: #21201c; --muted: #6f6d66;
+  --line: #e6e3da; --line-strong: #d3cfc3;
+  --accent: #2b5fd9; --accent-soft: #e9eefb;
+  --code-bg: #fbfaf6; --flash: #f3ecd1; --flash-hot: #ecd98f;
+  --kw: #a626a4; --str: #3f8e42; --com: #a2a099; --num: #986801; --defc: #3665d0;
+  --ok: #2e7d32; --warn: #a86503; --bad: #c62828; --stub: #8a6d3b;
+  --r-ctl: 6px; --r-box: 10px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow: 0 10px 30px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a; --panel: #1e1f22; --ink: #e8e6e0; --muted: #9b9891;
+    --line: #2f3034; --line-strong: #3d3e44;
+    --accent: #85a8f8; --accent-soft: #263452;
+    --code-bg: #1a1b1e; --flash: #3b3517; --flash-hot: #57491a;
+    --kw: #c678dd; --str: #98c379; --com: #5c6370; --num: #d19a66; --defc: #7cb0f5;
+    --ok: #81c784; --warn: #ffb74d; --bad: #e57373; --stub: #d4b06a;
+    --shadow: 0 10px 30px rgb(0 0 0 / .5);
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+@supports (height: 100dvh) {
+  /* iOS Safari: 100% jumps when the address bar collapses; dvh does not */
+  html, body { height: 100dvh; }
+}
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+  display: flex; flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+  border-radius: var(--r-ctl);
+}
+/* ---- header ---- */
+header {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 11px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+header h1 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+header .meta {
+  color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums;
+  display: inline-flex; gap: 14px; flex-wrap: wrap;
+}
+nav.tabs { display: flex; gap: 2px; margin-left: auto; }
+nav.tabs button {
+  border: none; background: none; color: var(--muted);
+  padding: 5px 12px; border-radius: var(--r-ctl); cursor: pointer; font-size: 13px;
+}
+nav.tabs button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+nav.tabs button:hover { color: var(--accent); }
+nav.tabs button:active { transform: translateY(1px); }
+#menu {
+  display: none; border: 1px solid var(--line); background: var(--panel);
+  border-radius: var(--r-ctl); padding: 3px 10px; cursor: pointer; font-size: 15px;
+  line-height: 1.3; align-self: center;
+}
+#scrim {
+  display: none; position: fixed; inset: 0; background: rgb(0 0 0 / .35); z-index: 8;
+}
+body.drawer-open #scrim { display: block; }
+.banner {
+  padding: 8px 18px; font-size: 13px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--warn) 10%, var(--panel)); color: var(--warn);
+}
+/* ---- shell ---- */
+main { flex: 1; display: flex; min-height: 0; }
+aside {
+  width: 300px; min-width: 220px; border-right: 1px solid var(--line);
+  background: var(--panel); display: flex; flex-direction: column; min-height: 0;
+}
+aside .search { padding: 10px; border-bottom: 1px solid var(--line); }
+aside .search input {
+  width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-ctl);
+  background: var(--bg); font-size: 13px;
+}
+aside .search input::placeholder { color: var(--muted); }
+aside .search input:focus-visible { outline-offset: 0; border-color: transparent; }
+#sidebar-list { flex: 1; overflow: auto; padding: 6px 0; }
+.treedir {
+  padding: 8px 12px 3px; color: var(--muted); font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+.treefile, .treesym, .result {
+  display: flex; align-items: center; gap: 7px; padding: 3px 12px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px;
+}
+.treefile:hover, .treesym:hover, .result:hover { background: var(--accent-soft); }
+.treesym { padding-left: 26px; }
+.treesym.depth2 { padding-left: 40px; }
+.kindtag {
+  font-size: 10px; font-weight: 700; width: 16px; height: 16px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+}
+.kind-class    { background: #ecdcf6; color: #79379f; }
+.kind-function { background: #dbe7f8; color: #2456ae; }
+.kind-method   { background: #dcefe2; color: #1f6b47; }
+.kind-module   { background: #f0e6d2; color: #8a5a17; }
+@media (prefers-color-scheme: dark) {
+  .kind-class    { background: #3a2a50; color: #c9abf0; }
+  .kind-function { background: #263a58; color: #9dc0f2; }
+  .kind-method   { background: #213e2e; color: #94d4ac; }
+  .kind-module   { background: #45391f; color: #ddbf85; }
+}
+#symbol-info {
+  border-top: 1px solid var(--line); padding: 10px 12px; font-size: 12px;
+  max-height: 40%; overflow: auto;
+}
+#symbol-info h3 { margin: 0 0 4px; font-size: 13px; font-weight: 650; }
+#symbol-info .sig { font-family: ui-monospace, monospace; color: var(--muted); word-break: break-all; }
+#symbol-info h4 {
+  margin: 10px 0 3px; font-size: 10.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+#symbol-info a { color: var(--accent); text-decoration: none; cursor: pointer; display: block; padding: 1px 0; }
+#symbol-info a:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* ---- tab panels ---- */
+section.tab { flex: 1; overflow: auto; display: none; min-width: 0; }
+section.tab.active { display: block; }
+.pad { padding: 24px 28px 48px; max-width: 920px; }
+h2 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; margin: 28px 0 10px; }
+h2:first-child { margin-top: 0; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-box);
+  padding: 14px 16px; margin: 10px 0;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.chip {
+  font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--accent);
+  background: var(--accent-soft); border: none; border-radius: var(--r-ctl);
+  padding: 2.5px 8px; cursor: pointer;
+}
+.chip:hover { background: color-mix(in srgb, var(--accent) 18%, var(--accent-soft)); }
+.chip:active { transform: translateY(1px); }
+.badge {
+  font-size: 11px; font-weight: 600; border-radius: var(--r-ctl);
+  padding: 1.5px 7px; vertical-align: 1px;
+}
+.badge.proposed, .badge.hypothesis { background: var(--accent-soft); color: var(--accent); }
+.badge.approved, .badge.reconfirmed { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.stale, .badge.unknown { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.badge.rejected, .badge.removed { background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); }
+.badge.added { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.modified { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+/* ---- flow ---- */
+.flowstep { display: flex; gap: 14px; margin: 14px 0; }
+.flowstep .num {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; /* step counter: circle by design */
+  background: var(--accent); color: var(--panel);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums;
+}
+.flowstep .body { flex: 1; min-width: 0; }
+.flowstep h4 { margin: 0 0 5px; font-size: 14px; font-weight: 650; }
+.flowstep .detail { white-space: pre-wrap; color: color-mix(in srgb, var(--ink) 88%, var(--muted)); }
+.branch {
+  border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 4%, transparent);
+  border-radius: 0 var(--r-ctl) var(--r-ctl) 0;
+  padding: 6px 10px; margin: 8px 0; font-size: 13px;
+}
+.branch b { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; }
+.errorpath { color: var(--bad); font-size: 13px; margin-top: 8px; }
+.flowline { border-left: 2px dashed var(--line-strong); margin-left: 13px; height: 12px; }
+/* ---- code ---- */
+#tab-code { display: none; flex-direction: column; }
+#tab-code.active { display: flex; }
+#code-head {
+  display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+  border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px;
+}
+#code-head .path { font-family: ui-monospace, monospace; font-size: 12.5px; }
+#code-head button {
+  border: 1px solid var(--line); background: var(--panel);
+  border-radius: var(--r-ctl); padding: 2px 10px; cursor: pointer; font-size: 13px;
+  line-height: 1.4;
+}
+#code-head button:hover { border-color: var(--line-strong); color: var(--accent); }
+#code-head button:active { transform: translateY(1px); }
+#code-view { flex: 1; overflow: auto; background: var(--code-bg); }
+#code-view pre { margin: 0; padding: 10px 0 60vh; }
+.line { display: flex; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.line:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.line.flash { background: var(--flash); box-shadow: inset 2px 0 0 var(--accent); }
+.line .ln {
+  flex: none; width: 62px; text-align: right; padding-right: 10px; color: var(--muted);
+  user-select: none; font-variant-numeric: tabular-nums;
+}
+.line .defmark { color: var(--defc); cursor: pointer; }
+.line .lc { white-space: pre; padding-right: 24px; }
+a.ref {
+  color: inherit; text-decoration: underline; text-decoration-style: dotted;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-underline-offset: 3px; cursor: pointer;
+}
+a.ref:hover { color: var(--accent); background: var(--accent-soft); text-decoration-style: solid; }
+.tok-kw { color: var(--kw); } .tok-str { color: var(--str); }
+.tok-com { color: var(--com); font-style: italic; } .tok-num { color: var(--num); }
+.tok-def { color: var(--defc); font-weight: 600; }
+#code-view::-webkit-scrollbar, #sidebar-list::-webkit-scrollbar { width: 10px; height: 10px; }
+#code-view::-webkit-scrollbar-thumb, #sidebar-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong); border-radius: 5px;
+  border: 2px solid var(--code-bg); background-clip: padding-box;
+}
+/* ---- graph ---- */
+#tab-graph .wrap, #arch-wrap { overflow: auto; }
+svg text { font: 11.5px ui-monospace, monospace; fill: var(--ink); }
+svg .node rect { fill: var(--panel); stroke: var(--line-strong); rx: var(--r-ctl); cursor: pointer; }
+svg .node:hover rect { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
+svg .node.stub rect { stroke-dasharray: 4 3; stroke: var(--stub); }
+svg .node.stub text { fill: var(--stub); }
+svg .edge { stroke: var(--muted); fill: none; opacity: .5; marker-end: url(#arrow); }
+svg .edge.imports { stroke-dasharray: 5 4; }
+svg .edgelabel {
+  fill: var(--muted); font-size: 9.5px;
+  stroke: var(--bg); stroke-width: 3px; paint-order: stroke;
+}
+/* classes, not presentation attributes: the `svg text` font shorthand above
+   overrides presentation attributes, which made sub text render at 11.5px */
+svg text.node-label { font-weight: 600; }
+svg text.node-sub { font-size: 10px; opacity: .65; }
+.legend { color: var(--muted); font-size: 12px; margin: 6px 0 12px; }
+/* ---- lessons ---- */
+details.reveal { margin-top: 10px; }
+details.reveal summary {
+  cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; user-select: none;
+  border-radius: var(--r-ctl);
+}
+details.reveal summary:hover { text-decoration: underline; text-underline-offset: 3px; }
+details.reveal[open] summary { margin-bottom: 4px; }
+textarea.explain {
+  width: 100%; min-height: 110px; margin-top: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--bg);
+  font-size: 13px; resize: vertical;
+}
+textarea.explain::placeholder { color: var(--muted); }
+.savenote { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+/* ---- boundary modal ---- */
+#boundary {
+  position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none;
+  align-items: center; justify-content: center; z-index: 10;
+}
+#boundary .box {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-box);
+  box-shadow: var(--shadow);
+  padding: 20px 22px; max-width: 480px; width: 90%;
+}
+#boundary h3 { margin: 0 0 6px; font-weight: 650; }
+#boundary .sig { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--muted); word-break: break-all; }
+#boundary p { font-size: 13px; }
+#boundary button {
+  border: 1px solid transparent; background: var(--accent-soft); color: var(--accent);
+  border-radius: var(--r-ctl); padding: 6px 14px; cursor: pointer; font-weight: 600;
+}
+#boundary button:hover { background: color-mix(in srgb, var(--accent) 18%, var(--accent-soft)); }
+#boundary button:active { transform: translateY(1px); }
+/* ---- footer / misc ---- */
+footer {
+  border-top: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  font-size: 11.5px; padding: 6px 18px; display: flex; gap: 16px; flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+ul.plain { padding-left: 18px; margin: 6px 0; }
+.muted { color: var(--muted); }
+table.diff { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.diff th {
+  font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+  border-bottom: 1px solid var(--line-strong); padding: 5px 8px; text-align: left;
+}
+table.diff td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+table.diff tr:last-child td { border-bottom: none; }
+table.diff td.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+/* ---- mobile: sidebar becomes an off-canvas drawer ---- */
+@media (max-width: 768px) {
+  header { padding: 8px 12px; gap: 10px; }
+  header .meta { flex-basis: 100%; order: 12; gap: 10px; font-size: 11px; }
+  #menu { display: inline-flex; }
+  nav.tabs {
+    margin-left: 0; order: 11; width: 100%;
+    overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none;
+  }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { flex: none; }
+  aside {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 9;
+    width: min(320px, 85vw); transform: translateX(-100%);
+    box-shadow: none; border-right: 1px solid var(--line-strong);
+  }
+  aside.open { transform: translateX(0); box-shadow: var(--shadow); }
+  .treefile, .treesym, .result { padding-top: 8px; padding-bottom: 8px; }
+  .pad { padding: 16px 14px 40px; }
+  .line .ln { width: 44px; padding-right: 8px; }
+  .flowstep { gap: 10px; }
+  table.diff td.mono, table.diff td code { white-space: normal; word-break: break-all; }
+  footer { gap: 10px; }
+}
+/* ---- motion: feedback-only, gated ---- */
+@media (prefers-reduced-motion: no-preference) {
+  aside { transition: transform .22s var(--ease); }
+  nav.tabs button, .chip, #code-head button, #boundary button, a.ref,
+  .treefile, .treesym, .result, svg .node rect {
+    transition: background-color .16s var(--ease), color .16s var(--ease),
+                border-color .16s var(--ease), stroke .16s var(--ease);
+  }
+  section.tab.active { animation: tab-in .22s var(--ease); }
+  @keyframes tab-in { from { opacity: 0; transform: translateY(4px); } }
+  .line.flash { animation: flash-in 1.2s var(--ease); }
+  @keyframes flash-in { 0% { background: var(--flash-hot); } 100% { background: var(--flash); } }
+  #boundary .box { animation: pop-in .18s var(--ease); }
+  @keyframes pop-in { from { opacity: 0; transform: scale(.97); } }
+}
+</style>
+</head>
+<body>
+<script type="application/json" id="atlas-data">__ATLAS_DATA__</script>
+
+<header>
+  <button id="menu" aria-label="Open file list">☰</button>
+  <h1 id="hd-title"></h1>
+  <span class="meta" id="hd-meta"></span>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+<div class="banner" id="banner" style="display:none"></div>
+<div id="scrim"></div>
+<main>
+  <aside>
+    <div class="search"><input id="search" type="search" placeholder="Search symbols…" autocomplete="off"></div>
+    <div id="sidebar-list"></div>
+    <div id="symbol-info" style="display:none"></div>
+  </aside>
+  <section class="tab pad" id="tab-overview"></section>
+  <section class="tab pad" id="tab-flows"></section>
+  <section class="tab" id="tab-graph"><div class="pad" id="graph-pad"></div></section>
+  <section class="tab" id="tab-code">
+    <div id="code-head">
+      <button id="back" title="Back (Backspace / Alt+←)">←</button>
+      <span class="path" id="code-path">Select a file</span>
+    </div>
+    <div id="code-view"></div>
+  </section>
+  <section class="tab pad" id="tab-knowledge"></section>
+  <section class="tab pad" id="tab-lessons"></section>
+  <section class="tab pad" id="tab-diff"></section>
+  <section class="tab pad" id="tab-review"></section>
+</main>
+<footer id="foot"></footer>
+
+<div id="boundary"><div class="box">
+  <h3 id="b-name"></h3>
+  <div class="sig" id="b-sig"></div>
+  <p>This symbol is outside the current slice (boundary marker).<br>
+  To see its code, request a re-analysis with this symbol as an entry point.</p>
+  <p class="muted" id="b-hint" style="font-family:ui-monospace,monospace;font-size:12px"></p>
+  <button id="b-close">Close</button>
+</div></div>
+
+<script>
+"use strict";
+const A = JSON.parse(document.getElementById("atlas-data").textContent);
+
+/* ---------------- data indexing ---------------- */
+const filesByPath = new Map(A.index.files.map(f => [f.path, f]));
+const fileLines = new Map(A.index.files.map(f => [f.path, f.source.split("\n")]));
+const symById = new Map(A.index.symbols.map(s => [s.symbol_id, s]));
+const symsByPath = new Map();
+for (const s of A.index.symbols) {
+  if (!symsByPath.has(s.path)) symsByPath.set(s.path, []);
+  symsByPath.get(s.path).push(s);
+}
+const refsByPathLine = new Map(); // "path:line" -> [ref]
+const refsBySym = new Map();
+for (const r of A.index.references) {
+  const k = r.path + ":" + r.range.start_line;
+  if (!refsByPathLine.has(k)) refsByPathLine.set(k, []);
+  refsByPathLine.get(k).push(r);
+  if (!refsBySym.has(r.symbol_id)) refsBySym.set(r.symbol_id, []);
+  refsBySym.get(r.symbol_id).push(r);
+}
+const callers = new Map(), callees = new Map();
+for (const e of A.index.edges) {
+  if (e.kind !== "calls") continue;
+  if (!callees.has(e.from)) callees.set(e.from, new Set());
+  callees.get(e.from).add(e.to);
+  if (!callers.has(e.to)) callers.set(e.to, new Set());
+  callers.get(e.to).add(e.from);
+}
+const defsByPathLine = new Map(); // "path:line" -> symbol
+for (const s of A.index.symbols) {
+  if (s.in_slice && s.kind !== "module") defsByPathLine.set(s.path + ":" + s.range.start_line, s);
+}
+const LS = key => `atlas:${A.artifact_id}:${key}`;
+
+/* ---------------- utilities ---------------- */
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const el = (id) => document.getElementById(id);
+function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
+
+/* ---------------- tabs ---------------- */
+const TABS = [
+  ["overview", "Overview"], ["flows", "Flows"], ["graph", "Graph"], ["code", "Code"],
+  ["knowledge", "Knowledge"], ["lessons", "Lessons"],
+];
+if (A.changes) TABS.push(["diff", "Diff"]);
+if ((A.findings || []).length) TABS.push(["review", "Review"]);
+let activeTab = "overview";
+function showTab(name) {
+  activeTab = name;
+  document.querySelectorAll("section.tab").forEach(s => s.classList.remove("active"));
+  el("tab-" + name).classList.add("active");
+  document.querySelectorAll("nav.tabs button").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === name));
+}
+for (const [id, label] of TABS) {
+  const b = h(`<button data-tab="${id}">${label}</button>`);
+  b.onclick = () => { showTab(id); setHash(); };
+  el("tabs").appendChild(b);
+}
+
+/* ---------------- header/banner/footer ---------------- */
+el("hd-title").textContent = A.title;
+el("hd-meta").innerHTML = [
+  `${esc(A.repository.id)} @ ${esc(A.repository.head_commit.slice(0, 18))}`,
+  `${esc(A.slice.entry_points.join(", "))} +${A.slice.hop_limit} hops`,
+  `${A.slice.file_count} files`,
+].map(x => `<span>${x}</span>`).join("");
+if ((A.slice.truncations || []).length) {
+  el("banner").style.display = "block";
+  el("banner").textContent = "Truncated by slice size budget: " + A.slice.truncations.join("; ");
+}
+el("foot").innerHTML = [
+  `artifact ${esc(A.artifact_id)}`,
+  `skill ${esc(A.inputs.skill_version)}`,
+  `template ${esc(A.inputs.template_version || "?")}`,
+  A.inputs.model ? `model ${esc(A.inputs.model)}` : "",
+  A.inputs.generated_at ? esc(A.inputs.generated_at) : "",
+  A.previous_artifact_id ? `prev ${esc(A.previous_artifact_id)}` : "",
+].filter(Boolean).map(x => `<span>${x}</span>`).join("");
+
+/* ---------------- evidence chip ---------------- */
+function chipsHtml(evs) {
+  if (!evs || !evs.length) return "";
+  return `<div class="chips">` + evs.map((ev, i) =>
+    `<button class="chip" data-ev='${esc(JSON.stringify(ev))}'>` +
+    `${esc(ev.path)}:${ev.range.start_line}</button>`).join("") + `</div>`;
+}
+document.addEventListener("click", e => {
+  const chip = e.target.closest(".chip[data-ev]");
+  if (chip) {
+    const ev = JSON.parse(chip.dataset.ev);
+    if (ev.symbol_id && symById.has(ev.symbol_id) && !symById.get(ev.symbol_id).in_slice) {
+      showBoundary(symById.get(ev.symbol_id)); return;
+    }
+    openLocation(ev.path, ev.range.start_line, ev.range.end_line);
+  }
+});
+
+/* ---------------- Overview ---------------- */
+{
+  const o = A.overview;
+  let html = `<h2>Summary</h2><div class="card"><div style="white-space:pre-wrap">${esc(o.summary)}</div></div>`;
+  if (o.architecture && o.architecture.modules.length) {
+    html += `<h2>Architecture</h2><div class="legend">Click a node to jump to code. Edge labels show the data that flows between components.</div><div id="arch-wrap"></div><div id="dataflow-wrap"></div>`;
+  }
+  if ((A.unknowns || []).length) {
+    html += `<h2>Unknowns</h2><div class="card"><ul class="plain">` +
+      A.unknowns.map(u => `<li>${esc(u)}</li>`).join("") + `</ul>` +
+      `<div class="muted" style="font-size:12px;margin-top:6px">Unverified items. Not filled in with guesses.</div></div>`;
+  }
+  el("tab-overview").innerHTML = html;
+  if (o.architecture && o.architecture.modules.length) {
+    const nodes = o.architecture.modules.map(m => ({
+      id: m.id, label: m.label, sub: m.description || "", path: m.path,
+    }));
+    const edges = (o.architecture.edges || []).map(e =>
+      ({ from: e.from, to: e.to, kind: e.kind || "", label: e.label || "" }));
+    el("arch-wrap").appendChild(renderGraph(nodes, edges, id => {
+      const m = o.architecture.modules.find(x => x.id === id);
+      if (m && m.path && filesByPath.has(m.path)) openLocation(m.path, 1, 1);
+    }));
+    const dataflow = (o.architecture.edges || []).filter(e => e.label || e.example);
+    if (dataflow.length) {
+      const modLabel = id => {
+        const m = o.architecture.modules.find(x => x.id === id);
+        return m ? m.label : id;
+      };
+      el("dataflow-wrap").innerHTML =
+        `<h2>Data flow</h2><div class="card"><table class="diff">` +
+        `<tr><th>Route</th><th>What flows</th><th>Example</th></tr>` +
+        dataflow.map(e =>
+          `<tr><td>${esc(modLabel(e.from))} → ${esc(modLabel(e.to))}</td>` +
+          `<td>${e.label ? `<code>${esc(e.label)}</code>` : ""}</td>` +
+          `<td class="mono">${esc(e.example || "")}</td></tr>`).join("") +
+        `</table></div>`;
+    }
+  }
+}
+
+/* ---------------- Flows ---------------- */
+{
+  let html = "";
+  for (const flow of A.flows || []) {
+    html += `<h2>${esc(flow.title)}</h2>`;
+    if (flow.summary) html += `<div class="card" style="white-space:pre-wrap">${esc(flow.summary)}</div>`;
+    flow.steps.forEach((st, i) => {
+      if (i > 0) html += `<div class="flowline"></div>`;
+      html += `<div class="card flowstep"><div class="num">${i + 1}</div><div class="body">` +
+        `<h4>${esc(st.title)}</h4>` +
+        `<div class="detail">${esc(st.detail)}</div>`;
+      for (const br of st.branches || []) {
+        html += `<div class="branch"><b>${esc(br.condition)}</b> → ${esc(br.outcome)}${chipsHtml(br.evidence)}</div>`;
+      }
+      if (st.error_path) html += `<div class="errorpath">✕ ${esc(st.error_path)}</div>`;
+      html += chipsHtml(st.evidence) + `</div></div>`;
+    });
+  }
+  el("tab-flows").innerHTML = html || `<div class="muted pad">No flows</div>`;
+}
+
+/* ---------------- Knowledge (concepts + invariants) ---------------- */
+{
+  let html = "";
+  if ((A.concepts || []).length) {
+    html += `<h2>Domain Concepts</h2>`;
+    for (const c of A.concepts) {
+      html += `<div class="card"><h4 style="margin:0 0 4px">${esc(c.name)}</h4>` +
+        `<div>${esc(c.definition)}</div>` +
+        (c.contrast_with ? `<div class="muted" style="margin-top:5px;font-size:13px">↔ ${esc(c.contrast_with)}</div>` : "") +
+        chipsHtml(c.evidence) + `</div>`;
+    }
+  }
+  if ((A.invariants || []).length) {
+    html += `<h2>Invariants</h2>`;
+    for (const inv of A.invariants) {
+      html += `<div class="card"><span class="badge ${esc(inv.status)}">${esc(inv.status)}</span> ` +
+        `<b>${esc(inv.statement)}</b>` +
+        (inv.rationale ? `<div style="margin-top:5px">${esc(inv.rationale)}</div>` : "") +
+        ((inv.validated_by_tests || []).length
+          ? `<div class="muted" style="font-size:12.5px;margin-top:5px">tests: ${inv.validated_by_tests.map(esc).join(", ")}</div>` : "") +
+        chipsHtml(inv.evidence) + `</div>`;
+    }
+  }
+  el("tab-knowledge").innerHTML = html || `<div class="muted">No knowledge entries</div>`;
+}
+
+/* ---------------- Lessons ---------------- */
+{
+  const L = A.lessons || {};
+  let html = "";
+  if ((L.predict || []).length) {
+    html += `<h2>Predict before reveal</h2>`;
+    L.predict.forEach((p, i) => {
+      html += `<div class="card"><b>Q${i + 1}.</b> ${esc(p.question)}` +
+        `<details class="reveal"><summary>Make your prediction first, then open</summary>` +
+        `<div style="margin-top:8px;white-space:pre-wrap">${esc(p.reveal)}</div>${chipsHtml(p.evidence)}</details></div>`;
+    });
+  }
+  if ((L.explain_back || []).length) {
+    html += `<h2>Explain back</h2>`;
+    L.explain_back.forEach((p, i) => {
+      html += `<div class="card">${esc(p.prompt)}` +
+        `<textarea class="explain" data-i="${i}" placeholder="Explain in your own words. Saved locally."></textarea>` +
+        `<div class="savenote">Your answer is stored only in this browser (localStorage); an evaluator reviews it in the next agent run.</div></div>`;
+    });
+  }
+  if ((L.localization || []).length) {
+    html += `<h2>Change localization</h2>`;
+    L.localization.forEach((p, i) => {
+      html += `<div class="card"><b>Task ${i + 1}.</b> ${esc(p.task)}` +
+        `<details class="reveal"><summary>Decide where you would edit, then open</summary>` +
+        `<div style="margin-top:8px;white-space:pre-wrap">${esc(p.answer)}</div>${chipsHtml(p.evidence)}</details></div>`;
+    });
+  }
+  el("tab-lessons").innerHTML = html || `<div class="muted">No lessons</div>`;
+  el("tab-lessons").querySelectorAll("textarea.explain").forEach(t => {
+    t.value = localStorage.getItem(LS("explain:" + t.dataset.i)) || "";
+    t.addEventListener("input", () => localStorage.setItem(LS("explain:" + t.dataset.i), t.value));
+  });
+}
+
+/* ---------------- Review findings ---------------- */
+if ((A.findings || []).length) {
+  let html = `<h2>Findings</h2>`;
+  for (const f of A.findings) {
+    const cls = f.severity === "blocking" ? "rejected" : "stale";
+    html += `<div class="card"><span class="badge ${cls}">${esc(f.severity)}</span> ` +
+      `<b>${esc(f.claim)}</b>` +
+      `<div style="margin-top:6px"><b class="muted">Risk:</b> ${esc(f.risk_scenario)}</div>` +
+      (f.reproduction ? `<div style="margin-top:4px"><b class="muted">Repro:</b> ${esc(f.reproduction)}</div>` : "") +
+      (f.suggested_verification ? `<div style="margin-top:4px"><b class="muted">Verify:</b> ${esc(f.suggested_verification)}</div>` : "") +
+      ((f.missing_evidence || []).length ? `<div style="margin-top:4px"><b class="muted">Missing:</b> ${f.missing_evidence.map(esc).join("; ")}</div>` : "") +
+      (f.verifier_verdict ? `<div style="margin-top:4px"><b class="muted">Verifier:</b> ${esc(f.verifier_verdict)}</div>` : "") +
+      chipsHtml(f.evidence) + `</div>`;
+  }
+  el("tab-review").innerHTML = html;
+}
+
+/* ---------------- Diff ---------------- */
+if (A.changes) {
+  const C = A.changes;
+  let html = `<h2>Since last run</h2>` +
+    `<div class="muted" style="margin-bottom:8px">previous revision: <code>${esc(C.previous_head_commit.slice(0, 18))}</code></div>`;
+  if ((C.symbols || []).length) {
+    html += `<div class="card"><table class="diff"><tr><th></th><th>symbol</th><th>note</th></tr>` +
+      C.symbols.map(s =>
+        `<tr><td><span class="badge ${esc(s.change)}">${esc(s.change)}</span></td>` +
+        `<td class="mono">${symById.has(s.symbol_id)
+          ? `<a class="ref" data-sym="${esc(s.symbol_id)}">${esc(s.symbol_id)}</a>`
+          : esc(s.symbol_id)}</td>` +
+        `<td>${esc(s.note || "")}</td></tr>`).join("") + `</table></div>`;
+  }
+  if ((C.files || []).length) {
+    html += `<h2>Files</h2><div class="card"><table class="diff">` +
+      C.files.map(f => `<tr><td><span class="badge ${esc(f.change)}">${esc(f.change)}</span></td>` +
+        `<td class="mono">${esc(f.path)}</td></tr>`).join("") + `</table></div>`;
+  }
+  if ((C.stale_items || []).length) {
+    html += `<h2>Stale candidates</h2><div class="card"><ul class="plain">` +
+      C.stale_items.map(s => `<li><code>${esc(s)}</code>: re-check the related explanation</li>`).join("") +
+      `</ul></div>`;
+  }
+  el("tab-diff").innerHTML = html;
+}
+
+/* ---------------- Python highlighter ---------------- */
+const PY_TOKEN = new RegExp(
+  [
+    "(#.*$)",                                                     // 1 comment
+    "(\"\"\"|'''|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*')", // 2 string
+    "\\b(def|class|return|if|elif|else|for|while|try|except|finally|raise|import|from|as|with|pass|break|continue|lambda|yield|async|await|not|and|or|in|is|None|True|False|global|nonlocal|del|assert|self|cls)\\b", // 3 kw
+    "\\b(\\d+(?:\\.\\d+)?)\\b",                                   // 4 number
+  ].join("|"), "gm");
+function highlight(text) {
+  let out = "", last = 0;
+  for (const m of text.matchAll(PY_TOKEN)) {
+    out += esc(text.slice(last, m.index));
+    const cls = m[1] ? "tok-com" : m[2] ? "tok-str" : m[3] ? "tok-kw" : "tok-num";
+    out += `<span class="${cls}">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(text.slice(last));
+}
+
+/* ---------------- navigation history ---------------- */
+/* Unified stack across tabs and code locations. Link-driven jumps push the
+   previous state, so back returns to the originating tab, not just the
+   previous code location. State is mirrored to location.hash so browser
+   back/forward also works. */
+let currentPath = null;
+let lastLine = 1;
+const navStack = [];
+
+function snapshot() {
+  return { tab: activeTab, path: currentPath, line: lastLine };
+}
+function setHash() {
+  const target = activeTab === "code" && currentPath
+    ? `#code=${encodeURIComponent(currentPath)}:${lastLine}`
+    : `#${activeTab}`;
+  if (location.hash !== target) location.hash = target;
+}
+function parseHash() {
+  const raw = location.hash.slice(1);
+  if (raw.startsWith("code=")) {
+    const body = raw.slice(5);
+    const i = body.lastIndexOf(":");
+    if (i > 0) {
+      return {
+        tab: "code",
+        path: decodeURIComponent(body.slice(0, i)),
+        line: parseInt(body.slice(i + 1), 10) || 1,
+      };
+    }
+  }
+  const tab = decodeURIComponent(raw || "overview");
+  return TABS.some(([id]) => id === tab) ? { tab } : { tab: "overview" };
+}
+function applyState(s) {
+  if (s.tab === "code" && s.path && filesByPath.has(s.path)) {
+    gotoLocation(s.path, s.line, s.line);
+  } else {
+    showTab(s.tab);
+  }
+}
+window.addEventListener("hashchange", () => {
+  const s = parseHash();
+  const same = s.tab === activeTab &&
+    (s.tab !== "code" || (s.path === currentPath && s.line === lastLine));
+  if (!same) applyState(s);  // browser back/forward, no push
+});
+function goBack() {
+  const prev = navStack.pop();
+  if (!prev) return;
+  if (prev.tab === "code" && prev.path) gotoLocation(prev.path, prev.line, prev.line);
+  else showTab(prev.tab);
+  setHash();
+}
+document.addEventListener("keydown", e => {
+  const t = e.target;
+  const editing = t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT");
+  if ((e.altKey && e.key === "ArrowLeft") || (e.key === "Backspace" && !editing)) {
+    e.preventDefault();
+    goBack();
+  }
+});
+
+/* ---------------- Code pane ---------------- */
+function renderFile(path) {
+  const file = filesByPath.get(path);
+  if (!file) return;
+  currentPath = path;
+  el("code-path").textContent = path;
+  const lines = fileLines.get(path);
+  let html = "<pre>";
+  for (let i = 0; i < lines.length; i++) {
+    const n = i + 1;
+    const def = defsByPathLine.get(path + ":" + n);
+    const refs = (refsByPathLine.get(path + ":" + n) || [])
+      .filter(r => r.range.end_line === n)
+      .sort((a, b) => a.range.start_character - b.range.start_character);
+    let content = "";
+    if (refs.length) {
+      let col = 0; const text = lines[i];
+      for (const r of refs) {
+        const s = r.range.start_character, e = r.range.end_character;
+        if (s < col || e > text.length) continue;
+        content += highlight(text.slice(col, s));
+        content += `<a class="ref" data-sym="${esc(r.symbol_id)}">${highlight(text.slice(s, e))}</a>`;
+        col = e;
+      }
+      content += highlight(text.slice(col));
+    } else {
+      content = highlight(lines[i]);
+    }
+    const mark = def
+      ? `<span class="defmark" data-sym="${esc(def.symbol_id)}" title="Symbol info: ${esc(def.qualname || def.name)}">◆ </span>`
+      : "  ";
+    html += `<div class="line" data-l="${n}"><span class="ln">${mark}${n}</span><span class="lc">${content || " "}</span></div>`;
+  }
+  html += "</pre>";
+  el("code-view").innerHTML = html;
+}
+function gotoLocation(path, line, endLine) {
+  if (!filesByPath.has(path)) return;
+  showTab("code");
+  if (currentPath !== path) renderFile(path);
+  lastLine = line;
+  document.querySelectorAll(".line.flash").forEach(x => x.classList.remove("flash"));
+  const end = endLine || line;
+  for (let n = line; n <= Math.min(end, line + 200); n++) {
+    const row = el("code-view").querySelector(`.line[data-l="${n}"]`);
+    if (row) row.classList.add("flash");
+  }
+  const target = el("code-view").querySelector(`.line[data-l="${line}"]`);
+  if (target) target.scrollIntoView({ block: "center" });
+}
+function openLocation(path, line, endLine) {
+  if (!filesByPath.has(path)) return;
+  navStack.push(snapshot());
+  if (navStack.length > 100) navStack.shift();
+  gotoLocation(path, line, endLine);
+  setHash();
+}
+el("back").onclick = goBack;
+function openSymbol(symId) {
+  const s = symById.get(symId);
+  if (!s) return;
+  if (!s.in_slice) { showBoundary(s); return; }
+  openLocation(s.path, s.range.start_line, Math.min(s.range.end_line, s.range.start_line + 2));
+  showSymbolInfo(s);
+}
+document.addEventListener("click", e => {
+  const ref = e.target.closest("a.ref[data-sym]");
+  if (ref) { openSymbol(ref.dataset.sym); return; }
+  const dm = e.target.closest(".defmark[data-sym]");
+  if (dm) { showSymbolInfo(symById.get(dm.dataset.sym)); return; }
+});
+
+/* ---------------- Boundary (PRD §9.3) ---------------- */
+function showBoundary(s) {
+  el("b-name").textContent = s.name + (s.in_slice ? "" : "  (outside slice)");
+  el("b-sig").textContent = ((s.signature || "") + "   " + s.path).trim();
+  el("b-hint").textContent = `re-analysis entry example: ${s.symbol_id}`;
+  el("boundary").style.display = "flex";
+  try {
+    const key = LS("boundary");
+    const log = JSON.parse(localStorage.getItem(key) || "[]");
+    log.push({ symbol_id: s.symbol_id, at: new Date().toISOString() });
+    localStorage.setItem(key, JSON.stringify(log.slice(-200)));
+  } catch (_) { /* ignore storage failures */ }
+}
+el("b-close").onclick = () => el("boundary").style.display = "none";
+el("boundary").addEventListener("click", e => {
+  if (e.target === el("boundary")) el("boundary").style.display = "none";
+});
+
+/* ---------------- Symbol info ---------------- */
+function showSymbolInfo(s) {
+  if (!s) return;
+  const box = el("symbol-info");
+  box.style.display = "block";
+  const list = (ids, cls) => [...(ids || [])].map(id => {
+    const t = symById.get(id);
+    if (!t) return "";
+    const suffix = t.in_slice ? "" : ` <span class="muted">(outside slice)</span>`;
+    return `<a data-go="${esc(id)}">${esc(t.qualname || t.name)}${suffix}</a>`;
+  }).join("") || `<span class="muted">none</span>`;
+  const refs = refsBySym.get(s.symbol_id) || [];
+  box.innerHTML =
+    `<h3><span class="kindtag kind-${s.kind}">${s.kind[0].toUpperCase()}</span> ${esc(s.qualname || s.name)}</h3>` +
+    `<div class="sig">${esc(s.signature || "")}</div>` +
+    `<h4>Callers</h4>${list(callers.get(s.symbol_id))}` +
+    `<h4>Callees</h4>${list(callees.get(s.symbol_id))}` +
+    `<h4>References (${refs.length})</h4>` +
+    refs.slice(0, 30).map(r =>
+      `<a data-loc='${esc(JSON.stringify([r.path, r.range.start_line]))}'>${esc(r.path)}:${r.range.start_line}</a>`
+    ).join("");
+  box.querySelectorAll("a[data-go]").forEach(a => a.onclick = () => openSymbol(a.dataset.go));
+  box.querySelectorAll("a[data-loc]").forEach(a => a.onclick = () => {
+    const [p, l] = JSON.parse(a.dataset.loc); openLocation(p, l, l);
+  });
+}
+
+/* ---------------- Sidebar: tree + search ---------------- */
+function renderTree(filter) {
+  const box = el("sidebar-list");
+  box.innerHTML = "";
+  if (filter) {
+    const q = filter.toLowerCase();
+    const hits = A.index.symbols.filter(s =>
+      s.kind !== "module" &&
+      ((s.qualname || s.name).toLowerCase().includes(q) || s.path.toLowerCase().includes(q))
+    ).slice(0, 80);
+    for (const s of hits) {
+      const row = h(`<div class="result"><span class="kindtag kind-${s.kind}">${s.kind[0].toUpperCase()}</span>` +
+        `<span>${esc(s.qualname || s.name)}</span>` +
+        `<span class="muted" style="margin-left:auto;font-size:11px">${s.in_slice ? esc(s.path.split("/").pop()) : "outside slice"}</span></div>`);
+      row.onclick = () => openSymbol(s.symbol_id);
+      box.appendChild(row);
+    }
+    if (!hits.length) box.appendChild(h(`<div class="muted" style="padding:8px 12px">No results</div>`));
+    return;
+  }
+  const byDir = new Map();
+  for (const f of A.index.files) {
+    const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : ".";
+    if (!byDir.has(dir)) byDir.set(dir, []);
+    byDir.get(dir).push(f);
+  }
+  for (const dir of [...byDir.keys()].sort()) {
+    box.appendChild(h(`<div class="treedir">${esc(dir)}/</div>`));
+    for (const f of byDir.get(dir).sort((a, b) => a.path.localeCompare(b.path))) {
+      const name = f.path.split("/").pop();
+      const frow = h(`<div class="treefile"><span class="kindtag kind-module">M</span>${esc(name)}</div>`);
+      frow.onclick = () => openLocation(f.path, 1, 1);
+      box.appendChild(frow);
+      for (const s of (symsByPath.get(f.path) || [])) {
+        if (s.kind === "module" || !s.in_slice) continue;
+        const depth = (s.qualname.match(/\./g) || []).length;
+        if (depth > 1) continue;
+        const srow = h(`<div class="treesym${depth ? " depth2" : ""}">` +
+          `<span class="kindtag kind-${s.kind}">${s.kind[0].toUpperCase()}</span>${esc(s.name)}</div>`);
+        srow.onclick = () => openSymbol(s.symbol_id);
+        box.appendChild(srow);
+      }
+    }
+  }
+}
+el("search").addEventListener("input", e => renderTree(e.target.value.trim()));
+renderTree("");
+
+/* ---------------- mobile drawer ---------------- */
+const drawer = document.querySelector("aside");
+function setDrawer(open) {
+  drawer.classList.toggle("open", open);
+  document.body.classList.toggle("drawer-open", open);
+}
+el("menu").onclick = () => setDrawer(!drawer.classList.contains("open"));
+el("scrim").onclick = () => setDrawer(false);
+drawer.addEventListener("click", e => {
+  if (e.target.closest(".treefile, .treesym, .result, a")) setDrawer(false);
+});
+
+/* ---------------- Graph (layered layout) ---------------- */
+function renderGraph(nodes, edges, onClick) {
+  const idset = new Set(nodes.map(n => n.id));
+  edges = edges.filter(e => idset.has(e.from) && idset.has(e.to) && e.from !== e.to);
+  const indeg = new Map(nodes.map(n => [n.id, 0]));
+  for (const e of edges) indeg.set(e.to, indeg.get(e.to) + 1);
+  const adj = new Map(nodes.map(n => [n.id, []]));
+  for (const e of edges) adj.get(e.from).push(e.to);
+  const depth = new Map();
+  let frontier = nodes.filter(n => indeg.get(n.id) === 0).map(n => n.id);
+  if (!frontier.length && nodes.length) frontier = [nodes[0].id];
+  frontier.forEach(id => depth.set(id, 0));
+  let queue = [...frontier];
+  while (queue.length) {
+    const id = queue.shift();
+    for (const nb of adj.get(id) || []) {
+      if (!depth.has(nb)) { depth.set(nb, depth.get(id) + 1); queue.push(nb); }
+    }
+  }
+  let extra = 0;
+  for (const n of nodes) if (!depth.has(n.id)) depth.set(n.id, ++extra % 3);
+
+  // Vertical layered layout: depth flows top to bottom, so more nodes grow the
+  // page downward and edge labels live in the horizontal gaps between rows.
+  const rows = new Map();
+  for (const n of nodes) {
+    const d = depth.get(n.id);
+    if (!rows.has(d)) rows.set(d, []);
+    rows.get(d).push(n);
+  }
+  // Content-driven sizing: no truncation. Monospace text width is chars * em-advance.
+  const textW = (s, size) => (s || "").length * size * 0.62;
+  const nodeH = 40, pad = 30, hGap = 36, minVGap = 56;
+  const maxD = Math.max(...rows.keys(), 0);
+  const nodeW = new Map();
+  for (const n of nodes) {
+    nodeW.set(n.id, Math.ceil(
+      Math.max(140, textW(n.label, 11.5) + 26, textW(n.sub, 10) + 26)));
+  }
+  // stack labeled edges inside their gap so parallel labels never collide
+  const gapCount = new Map();
+  const edgeSlot = new Map();
+  for (const e of edges) {
+    if (!e.label) continue;
+    const g = Math.min(depth.get(e.from), depth.get(e.to));
+    const c = gapCount.get(g) ?? 0;
+    edgeSlot.set(e, { gap: g, slot: c });
+    gapCount.set(g, c + 1);
+  }
+  const vGap = d => Math.max(minVGap, 32 + (gapCount.get(d) ?? 0) * 15);
+  const rowY = new Map();
+  let yCursor = pad;
+  for (let d = 0; d <= maxD; d++) {
+    rowY.set(d, yCursor);
+    yCursor += nodeH + vGap(d);
+  }
+  const height = yCursor - vGap(maxD) + pad;
+  const rowW = new Map();
+  for (const [d, list] of rows) {
+    rowW.set(d, list.reduce((s, n) => s + nodeW.get(n.id), 0) + hGap * (list.length - 1));
+  }
+  const maxRowW = Math.max(...rowW.values(), 140);
+  const width = maxRowW + pad * 2;
+  const pos = new Map();
+  for (const [d, list] of rows) {
+    let xCursor = pad + (maxRowW - rowW.get(d)) / 2;
+    for (const n of list) {
+      pos.set(n.id, { x: xCursor, y: rowY.get(d), w: nodeW.get(n.id) });
+      xCursor += nodeW.get(n.id) + hGap;
+    }
+  }
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("width", width); svg.setAttribute("height", height);
+  svg.innerHTML =
+    `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">` +
+    `<path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity="0.55"/></marker></defs>`;
+  const labels = [];
+  for (const e of edges) {
+    const a = pos.get(e.from), b = pos.get(e.to);
+    if (!a || !b) continue;
+    const x1 = a.x + a.w / 2, y1 = a.y + nodeH, x2 = b.x + b.w / 2, y2 = b.y;
+    const p = document.createElementNS(svgNS, "path");
+    const dy = Math.max(24, Math.abs(y2 - y1) / 2);
+    p.setAttribute("d", `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`);
+    p.setAttribute("class", "edge " + (e.kind || ""));
+    svg.appendChild(p);
+    const s = edgeSlot.get(e);
+    if (s) {
+      labels.push({
+        x: (x1 + x2) / 2,
+        y: rowY.get(s.gap) + nodeH + 24 + s.slot * 15,
+        text: e.label,
+      });
+    }
+  }
+  for (const n of nodes) {
+    const { x, y, w } = pos.get(n.id);
+    const g = document.createElementNS(svgNS, "g");
+    g.setAttribute("class", "node" + (n.stub ? " stub" : ""));
+    g.setAttribute("transform", `translate(${x},${y})`);
+    const sub = n.sub || "";
+    g.innerHTML =
+      `<rect width="${w}" height="${nodeH}" rx="7"></rect>` +
+      `<text x="10" y="${sub ? 17 : 24}" class="node-label">${esc(n.label)}</text>` +
+      (sub ? `<text x="10" y="31" class="node-sub">${esc(sub)}</text>` : "");
+    g.style.cursor = "pointer";
+    g.addEventListener("click", () => onClick(n.id));
+    svg.appendChild(g);
+  }
+  // edge labels last, so they paint on top of nodes and edges
+  let finalW = width;
+  for (const l of labels) {
+    const t = document.createElementNS(svgNS, "text");
+    t.setAttribute("x", l.x);
+    t.setAttribute("y", l.y);
+    t.setAttribute("text-anchor", "middle");
+    t.setAttribute("class", "edgelabel");
+    t.textContent = l.text;
+    svg.appendChild(t);
+    finalW = Math.max(finalW, l.x + textW(l.text, 9.5) / 2 + pad);
+  }
+  svg.setAttribute("width", finalW);
+  const wrap = document.createElement("div");
+  wrap.className = "wrap";
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+/* call graph tab */
+{
+  const MAX_NODES = 60;
+  const involved = new Set();
+  for (const e of A.index.edges) if (e.kind === "calls") { involved.add(e.from); involved.add(e.to); }
+  let symNodes = [...involved].map(id => symById.get(id)).filter(Boolean)
+    .filter(s => s.kind !== "module");
+  let capped = false;
+  if (symNodes.length > MAX_NODES) { symNodes = symNodes.slice(0, MAX_NODES); capped = true; }
+  const ids = new Set(symNodes.map(s => s.symbol_id));
+  const gEdges = A.index.edges
+    .filter(e => e.kind === "calls" && ids.has(e.from) && ids.has(e.to))
+    .map(e => ({ from: e.from, to: e.to, kind: e.resolution === "name_match" ? "imports" : "" }));
+  const nodes = symNodes.map(s => ({
+    id: s.symbol_id, label: s.qualname || s.name, sub: s.path.split("/").pop(),
+    stub: !s.in_slice,
+  }));
+  el("graph-pad").innerHTML =
+    `<h2>Call graph</h2><div class="legend">Solid edges are exact resolutions. Dashed edges are heuristic name matches. Dashed-border nodes are outside the slice.` +
+    (capped ? ` Capped at ${MAX_NODES} nodes.` : "") + `</div>`;
+  el("graph-pad").appendChild(renderGraph(nodes, gEdges, id => openSymbol(id)));
+}
+
+applyState(parseHash());
+setHash();
+</script>
+</body>
+</html>

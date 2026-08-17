@@ -1,0 +1,19 @@
+[project]
+name = "atlas"
+version = "0.1.0"
+description = "Agent SKILL for codebase onboarding — self-contained HTML artifacts"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+# Scripts run standalone via PEP 723. This dev group exists so tests can
+# import the scripts as modules in a development environment.
+dev = [
+    "pytest>=8",
+    "jsonschema>=4.21",
+    "tree-sitter>=0.23,<0.26",
+    "tree-sitter-python>=0.23",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

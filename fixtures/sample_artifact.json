@@ -1,0 +1,1113 @@
+{
+  "schema_version": "2.0",
+  "artifact_id": "art_fixture_orders",
+  "type": "learning",
+  "title": "orders subsystem onboarding",
+  "repository": {
+    "id": "sample_repo",
+    "head_commit": "worktree:8673f0efa2bdf53bbe69292bd8e419cd12089495:6e771e44d1c6ceb4"
+  },
+  "slice": {
+    "entry_points": [
+      "orders/service.py"
+    ],
+    "hop_limit": 2,
+    "file_count": 5,
+    "excludes": [],
+    "truncations": []
+  },
+  "inputs": {
+    "skill_version": "0.2.0",
+    "schema_version": "2.0"
+  },
+  "index": {
+    "files": [
+      {
+        "path": "notifications/email.py",
+        "language": "python",
+        "sha256": "sha256:7b5070fc800fd05b1fefa00489935b8fc81e4a407b62de842746efc3c0ec83b0",
+        "source": "def send_receipt(customer_id: str, receipt_id: str) -> None:\n    format_receipt(customer_id, receipt_id)\n\n\ndef format_receipt(customer_id: str, receipt_id: str) -> str:\n    return f\"receipt {receipt_id} for {customer_id}\"\n"
+      },
+      {
+        "path": "orders/models.py",
+        "language": "python",
+        "sha256": "sha256:387747ffe8bddf097eca45d235eed0c562a83e78b93f41c22eb2bff7c559b71b",
+        "source": "from dataclasses import dataclass, field\nfrom enum import Enum\nfrom uuid import uuid4\n\n\nclass OrderStatus(Enum):\n    PENDING = \"pending\"\n    PAID = \"paid\"\n    FAILED = \"failed\"\n\n\n@dataclass\nclass Order:\n    customer_id: str\n    amount_cents: int\n    status: OrderStatus = OrderStatus.PENDING\n    idempotency_key: str = field(default_factory=lambda: str(uuid4()))\n\n    def mark_paid(self) -> None:\n        self.status = OrderStatus.PAID\n\n    def mark_failed(self) -> None:\n        self.status = OrderStatus.FAILED\n"
+      },
+      {
+        "path": "orders/repository.py",
+        "language": "python",
+        "sha256": "sha256:fdeccb78dcedb0d418066642785096b686651e83c5c7ffaa0d9a8d7c9e16ca6d",
+        "source": "import sqlite3\n\nfrom orders.models import Order, OrderStatus\n\nDB_PASSWORD = \"super-secret-db-password-123\"\n\n\nclass OrderRepository:\n    def __init__(self, path: str = \":memory:\"):\n        self.conn = sqlite3.connect(path)\n        self.conn.execute(\n            \"CREATE TABLE IF NOT EXISTS orders \"\n            \"(key TEXT PRIMARY KEY, customer TEXT, amount INTEGER, status TEXT)\"\n        )\n\n    def save(self, order: Order) -> None:\n        self.conn.execute(\n            \"INSERT OR REPLACE INTO orders VALUES (?, ?, ?, ?)\",\n            (order.idempotency_key, order.customer_id, order.amount_cents, order.status.value),\n        )\n        self.conn.commit()\n\n    def get(self, idempotency_key: str) -> Order | None:\n        row = self.conn.execute(\n            \"SELECT customer, amount, status FROM orders WHERE key = ?\",\n            (idempotency_key,),\n        ).fetchone()\n        if row is None:\n            return None\n        order = Order(customer_id=row[0], amount_cents=row[1], status=OrderStatus(row[2]))\n        order.idempotency_key = idempotency_key\n        return order\n"
+      },
+      {
+        "path": "orders/service.py",
+        "language": "python",
+        "sha256": "sha256:1760f7c53a8543fff7c355cd9cb0e0cdaded1076fe2a540f28149a5d30b7c752",
+        "source": "from orders.models import Order\nfrom orders.repository import OrderRepository\nfrom payments.gateway import PaymentGateway\n\n\nclass DuplicateOrderError(Exception):\n    pass\n\n\nclass OrderService:\n    \"\"\"Entry point for order creation. Prevents duplicates via idempotency_key.\"\"\"\n\n    def __init__(self, repo: OrderRepository, gateway: PaymentGateway):\n        self.repo = repo\n        self.gateway = gateway\n\n    def create(self, customer_id: str, amount_cents: int, idempotency_key: str) -> Order:\n        existing = self.repo.get(idempotency_key)\n        if existing is not None:\n            raise DuplicateOrderError(idempotency_key)\n\n        order = Order(customer_id=customer_id, amount_cents=amount_cents)\n        order.idempotency_key = idempotency_key\n        self.repo.save(order)\n\n        try:\n            self.gateway.charge(customer_id, amount_cents, idempotency_key)\n        except Exception:\n            order.mark_failed()\n            self.repo.save(order)\n            raise\n\n        order.mark_paid()\n        self.repo.save(order)\n        return order\n"
+      },
+      {
+        "path": "payments/gateway.py",
+        "language": "python",
+        "sha256": "sha256:98da4a8b884b3c1e0a16004be45b041b5cbed8a31684ece453847dafb276edab",
+        "source": "from notifications.email import send_receipt\n\nAPI_KEY = \"pk_live_abcdef0123456789abcdef\"\n\n\nclass ChargeFailedError(Exception):\n    pass\n\n\nclass PaymentGateway:\n    def __init__(self, endpoint: str = \"https://pay.example.com\"):\n        self.endpoint = endpoint\n\n    def charge(self, customer_id: str, amount_cents: int, idempotency_key: str) -> str:\n        receipt_id = self._post(\n            \"/charges\",\n            {\n                \"customer\": customer_id,\n                \"amount\": amount_cents,\n                \"idempotency_key\": idempotency_key,\n            },\n        )\n        send_receipt(customer_id, receipt_id)\n        return receipt_id\n\n    def _post(self, path: str, payload: dict) -> str:\n        if payload.get(\"amount\", 0) <= 0:\n            raise ChargeFailedError(\"amount must be positive\")\n        return f\"rcpt_{payload['idempotency_key'][:8]}\"\n"
+      }
+    ],
+    "symbols": [
+      {
+        "symbol_id": "python:notifications.email",
+        "kind": "module",
+        "name": "email",
+        "qualname": "",
+        "path": "notifications/email.py",
+        "range": {
+          "start_line": 1,
+          "start_character": 0,
+          "end_line": 7,
+          "end_character": 0
+        },
+        "content_hash": "sha256:7b5070fc800fd05b1fefa00489935b8fc81e4a407b62de842746efc3c0ec83b0",
+        "signature": "module notifications.email",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:notifications.email:send_receipt",
+        "kind": "function",
+        "name": "send_receipt",
+        "qualname": "send_receipt",
+        "path": "notifications/email.py",
+        "range": {
+          "start_line": 1,
+          "start_character": 0,
+          "end_line": 2,
+          "end_character": 43
+        },
+        "content_hash": "sha256:539a9bfe6c7f2b2bd46489056ae0e42b6ecdf813284bba487971f73b7d5cb405",
+        "signature": "def send_receipt(customer_id: str, receipt_id: str) -> None",
+        "parent": "python:notifications.email",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:notifications.email:format_receipt",
+        "kind": "function",
+        "name": "format_receipt",
+        "qualname": "format_receipt",
+        "path": "notifications/email.py",
+        "range": {
+          "start_line": 5,
+          "start_character": 0,
+          "end_line": 6,
+          "end_character": 52
+        },
+        "content_hash": "sha256:effe49da955ecf67a7d1cf63d5c26bef26b35e398fcd471e6ecc95f2c3be5d3b",
+        "signature": "def format_receipt(customer_id: str, receipt_id: str) -> str",
+        "parent": "python:notifications.email",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.models",
+        "kind": "module",
+        "name": "models",
+        "qualname": "",
+        "path": "orders/models.py",
+        "range": {
+          "start_line": 1,
+          "start_character": 0,
+          "end_line": 24,
+          "end_character": 0
+        },
+        "content_hash": "sha256:387747ffe8bddf097eca45d235eed0c562a83e78b93f41c22eb2bff7c559b71b",
+        "signature": "module orders.models",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.models:OrderStatus",
+        "kind": "class",
+        "name": "OrderStatus",
+        "qualname": "OrderStatus",
+        "path": "orders/models.py",
+        "range": {
+          "start_line": 6,
+          "start_character": 0,
+          "end_line": 9,
+          "end_character": 21
+        },
+        "content_hash": "sha256:ae48be6c3d92a1cc68d6df572664eb52c97541de0a73b311bc8cb27c2f26740b",
+        "signature": "class OrderStatus(Enum)",
+        "parent": "python:orders.models",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.models:Order",
+        "kind": "class",
+        "name": "Order",
+        "qualname": "Order",
+        "path": "orders/models.py",
+        "range": {
+          "start_line": 12,
+          "start_character": 0,
+          "end_line": 23,
+          "end_character": 40
+        },
+        "content_hash": "sha256:5d6ed2020624a3133c7e9653ad3a0b7bbde638d11a6389aa1141f8794f44a70c",
+        "signature": "@dataclass",
+        "parent": "python:orders.models",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.models:Order.mark_paid",
+        "kind": "method",
+        "name": "mark_paid",
+        "qualname": "Order.mark_paid",
+        "path": "orders/models.py",
+        "range": {
+          "start_line": 19,
+          "start_character": 4,
+          "end_line": 20,
+          "end_character": 38
+        },
+        "content_hash": "sha256:062f0122e5815035c518e06348da10f09194b5ef8e370e3b02859fed3c306846",
+        "signature": "def mark_paid(self) -> None",
+        "parent": "python:orders.models:Order",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.models:Order.mark_failed",
+        "kind": "method",
+        "name": "mark_failed",
+        "qualname": "Order.mark_failed",
+        "path": "orders/models.py",
+        "range": {
+          "start_line": 22,
+          "start_character": 4,
+          "end_line": 23,
+          "end_character": 40
+        },
+        "content_hash": "sha256:6482673395a1f75cb3b2172caf44f29d9601adf065f61849f13db90684009442",
+        "signature": "def mark_failed(self) -> None",
+        "parent": "python:orders.models:Order",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.repository",
+        "kind": "module",
+        "name": "repository",
+        "qualname": "",
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 1,
+          "start_character": 0,
+          "end_line": 33,
+          "end_character": 0
+        },
+        "content_hash": "sha256:fdeccb78dcedb0d418066642785096b686651e83c5c7ffaa0d9a8d7c9e16ca6d",
+        "signature": "module orders.repository",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.repository:OrderRepository",
+        "kind": "class",
+        "name": "OrderRepository",
+        "qualname": "OrderRepository",
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 8,
+          "start_character": 0,
+          "end_line": 32,
+          "end_character": 20
+        },
+        "content_hash": "sha256:bfd21cf4452e731a390d5e35aa93d2f21b448ee17a4db6b39cd69d09a2b4cda1",
+        "signature": "class OrderRepository",
+        "parent": "python:orders.repository",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.repository:OrderRepository.__init__",
+        "kind": "method",
+        "name": "__init__",
+        "qualname": "OrderRepository.__init__",
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 9,
+          "start_character": 4,
+          "end_line": 14,
+          "end_character": 9
+        },
+        "content_hash": "sha256:4ae13b538d370db62ac6ed2beaca9883c5d061d6a5951357945fe2dfef2fc700",
+        "signature": "def __init__(self, path: str = \":memory:\")",
+        "parent": "python:orders.repository:OrderRepository",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.repository:OrderRepository.save",
+        "kind": "method",
+        "name": "save",
+        "qualname": "OrderRepository.save",
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 16,
+          "start_character": 4,
+          "end_line": 21,
+          "end_character": 26
+        },
+        "content_hash": "sha256:b91d57026c786ddd82e49a8686eb8d45a53394cfb09dbafddb4b779ce691aa71",
+        "signature": "def save(self, order: Order) -> None",
+        "parent": "python:orders.repository:OrderRepository",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.repository:OrderRepository.get",
+        "kind": "method",
+        "name": "get",
+        "qualname": "OrderRepository.get",
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 23,
+          "start_character": 4,
+          "end_line": 32,
+          "end_character": 20
+        },
+        "content_hash": "sha256:4ba5a83f9dd74085d718fbf31de1db3c050e07d51bf079439a9ace0e2859e31c",
+        "signature": "def get(self, idempotency_key: str) -> Order | None",
+        "parent": "python:orders.repository:OrderRepository",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.service",
+        "kind": "module",
+        "name": "service",
+        "qualname": "",
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 1,
+          "start_character": 0,
+          "end_line": 36,
+          "end_character": 0
+        },
+        "content_hash": "sha256:1760f7c53a8543fff7c355cd9cb0e0cdaded1076fe2a540f28149a5d30b7c752",
+        "signature": "module orders.service",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.service:DuplicateOrderError",
+        "kind": "class",
+        "name": "DuplicateOrderError",
+        "qualname": "DuplicateOrderError",
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 6,
+          "start_character": 0,
+          "end_line": 7,
+          "end_character": 8
+        },
+        "content_hash": "sha256:519aa2ae0b3921f5ffc13837c08acb86d534b76953478bc5459d6da5ad861bc0",
+        "signature": "class DuplicateOrderError(Exception)",
+        "parent": "python:orders.service",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.service:OrderService",
+        "kind": "class",
+        "name": "OrderService",
+        "qualname": "OrderService",
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 10,
+          "start_character": 0,
+          "end_line": 35,
+          "end_character": 20
+        },
+        "content_hash": "sha256:83b1402524182375f9813c77f100e35de43e37111d7744ba4c2da407c715e2b9",
+        "signature": "class OrderService",
+        "parent": "python:orders.service",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.service:OrderService.__init__",
+        "kind": "method",
+        "name": "__init__",
+        "qualname": "OrderService.__init__",
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 13,
+          "start_character": 4,
+          "end_line": 15,
+          "end_character": 30
+        },
+        "content_hash": "sha256:f35605f3dbe02304524b67c7bb1682aa42a4982b4f1bb4b3866b2cb82464be42",
+        "signature": "def __init__(self, repo: OrderRepository, gateway: PaymentGateway)",
+        "parent": "python:orders.service:OrderService",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:orders.service:OrderService.create",
+        "kind": "method",
+        "name": "create",
+        "qualname": "OrderService.create",
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 17,
+          "start_character": 4,
+          "end_line": 35,
+          "end_character": 20
+        },
+        "content_hash": "sha256:571d2ce46f2c86b1a7e16a6badf9df5da1ede81772884b91173e38d70a3ad5f7",
+        "signature": "def create(self, customer_id: str, amount_cents: int, idempotency_key: str) -> Order",
+        "parent": "python:orders.service:OrderService",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:payments.gateway",
+        "kind": "module",
+        "name": "gateway",
+        "qualname": "",
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 1,
+          "start_character": 0,
+          "end_line": 30,
+          "end_character": 0
+        },
+        "content_hash": "sha256:98da4a8b884b3c1e0a16004be45b041b5cbed8a31684ece453847dafb276edab",
+        "signature": "module payments.gateway",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:payments.gateway:ChargeFailedError",
+        "kind": "class",
+        "name": "ChargeFailedError",
+        "qualname": "ChargeFailedError",
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 6,
+          "start_character": 0,
+          "end_line": 7,
+          "end_character": 8
+        },
+        "content_hash": "sha256:b5a2c7cfb672f56b63a65e1484cf3a3509b014658a909adc33086ede0c078ed2",
+        "signature": "class ChargeFailedError(Exception)",
+        "parent": "python:payments.gateway",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:payments.gateway:PaymentGateway",
+        "kind": "class",
+        "name": "PaymentGateway",
+        "qualname": "PaymentGateway",
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 10,
+          "start_character": 0,
+          "end_line": 29,
+          "end_character": 55
+        },
+        "content_hash": "sha256:8a0079368934e1693d2469fc96367016adbe00f314ccf9a9f086f43036902b78",
+        "signature": "class PaymentGateway",
+        "parent": "python:payments.gateway",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:payments.gateway:PaymentGateway.__init__",
+        "kind": "method",
+        "name": "__init__",
+        "qualname": "PaymentGateway.__init__",
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 11,
+          "start_character": 4,
+          "end_line": 12,
+          "end_character": 32
+        },
+        "content_hash": "sha256:6a8a468b3241f8e66110646541b833ebf942bb917f045d3319905daa28b42e6f",
+        "signature": "def __init__(self, endpoint: str = \"https://pay.example.com\")",
+        "parent": "python:payments.gateway:PaymentGateway",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:payments.gateway:PaymentGateway.charge",
+        "kind": "method",
+        "name": "charge",
+        "qualname": "PaymentGateway.charge",
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 14,
+          "start_character": 4,
+          "end_line": 24,
+          "end_character": 25
+        },
+        "content_hash": "sha256:55e1e60405fd5249c7a381c99ad4fb15a007417df2df2e16a54c7fccfd669c9f",
+        "signature": "def charge(self, customer_id: str, amount_cents: int, idempotency_key: str) -> str",
+        "parent": "python:payments.gateway:PaymentGateway",
+        "in_slice": true
+      },
+      {
+        "symbol_id": "python:payments.gateway:PaymentGateway._post",
+        "kind": "method",
+        "name": "_post",
+        "qualname": "PaymentGateway._post",
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 26,
+          "start_character": 4,
+          "end_line": 29,
+          "end_character": 55
+        },
+        "content_hash": "sha256:8473068770390a638ce966143442001f250a5b3310c9fffabe463381675ec3ef",
+        "signature": "def _post(self, path: str, payload: dict) -> str",
+        "parent": "python:payments.gateway:PaymentGateway",
+        "in_slice": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "python:notifications.email:send_receipt",
+        "to": "python:notifications.email:format_receipt",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "notifications/email.py",
+          "range": {
+            "start_line": 2,
+            "start_character": 4,
+            "end_line": 2,
+            "end_character": 18
+          }
+        }
+      },
+      {
+        "from": "python:orders.repository",
+        "to": "python:orders.models",
+        "kind": "imports",
+        "resolution": "exact"
+      },
+      {
+        "from": "python:orders.repository:OrderRepository.get",
+        "to": "python:orders.models:Order",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/repository.py",
+          "range": {
+            "start_line": 30,
+            "start_character": 16,
+            "end_line": 30,
+            "end_character": 21
+          }
+        }
+      },
+      {
+        "from": "python:orders.repository:OrderRepository.get",
+        "to": "python:orders.models:OrderStatus",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/repository.py",
+          "range": {
+            "start_line": 30,
+            "start_character": 70,
+            "end_line": 30,
+            "end_character": 81
+          }
+        }
+      },
+      {
+        "from": "python:orders.service",
+        "to": "python:orders.models",
+        "kind": "imports",
+        "resolution": "exact"
+      },
+      {
+        "from": "python:orders.service",
+        "to": "python:orders.repository",
+        "kind": "imports",
+        "resolution": "exact"
+      },
+      {
+        "from": "python:orders.service",
+        "to": "python:payments.gateway",
+        "kind": "imports",
+        "resolution": "exact"
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.repository:OrderRepository.get",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 18,
+            "start_character": 29,
+            "end_line": 18,
+            "end_character": 32
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.service:DuplicateOrderError",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 20,
+            "start_character": 18,
+            "end_line": 20,
+            "end_character": 37
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.models:Order",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 22,
+            "start_character": 16,
+            "end_line": 22,
+            "end_character": 21
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.repository:OrderRepository.save",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 24,
+            "start_character": 18,
+            "end_line": 24,
+            "end_character": 22
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:payments.gateway:PaymentGateway.charge",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 27,
+            "start_character": 25,
+            "end_line": 27,
+            "end_character": 31
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.models:Order.mark_failed",
+        "kind": "calls",
+        "resolution": "name_match",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 29,
+            "start_character": 18,
+            "end_line": 29,
+            "end_character": 29
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.repository:OrderRepository.save",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 30,
+            "start_character": 22,
+            "end_line": 30,
+            "end_character": 26
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.models:Order.mark_paid",
+        "kind": "calls",
+        "resolution": "name_match",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 33,
+            "start_character": 14,
+            "end_line": 33,
+            "end_character": 23
+          }
+        }
+      },
+      {
+        "from": "python:orders.service:OrderService.create",
+        "to": "python:orders.repository:OrderRepository.save",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 34,
+            "start_character": 18,
+            "end_line": 34,
+            "end_character": 22
+          }
+        }
+      },
+      {
+        "from": "python:payments.gateway",
+        "to": "python:notifications.email",
+        "kind": "imports",
+        "resolution": "exact"
+      },
+      {
+        "from": "python:payments.gateway:PaymentGateway.charge",
+        "to": "python:payments.gateway:PaymentGateway._post",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "payments/gateway.py",
+          "range": {
+            "start_line": 15,
+            "start_character": 26,
+            "end_line": 15,
+            "end_character": 31
+          }
+        }
+      },
+      {
+        "from": "python:payments.gateway:PaymentGateway.charge",
+        "to": "python:notifications.email:send_receipt",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "payments/gateway.py",
+          "range": {
+            "start_line": 23,
+            "start_character": 8,
+            "end_line": 23,
+            "end_character": 20
+          }
+        }
+      },
+      {
+        "from": "python:payments.gateway:PaymentGateway._post",
+        "to": "python:payments.gateway:ChargeFailedError",
+        "kind": "calls",
+        "resolution": "exact",
+        "site": {
+          "path": "payments/gateway.py",
+          "range": {
+            "start_line": 28,
+            "start_character": 18,
+            "end_line": 28,
+            "end_character": 35
+          }
+        }
+      }
+    ],
+    "references": [
+      {
+        "path": "notifications/email.py",
+        "range": {
+          "start_line": 2,
+          "start_character": 4,
+          "end_line": 2,
+          "end_character": 18
+        },
+        "symbol_id": "python:notifications.email:format_receipt"
+      },
+      {
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 30,
+          "start_character": 16,
+          "end_line": 30,
+          "end_character": 21
+        },
+        "symbol_id": "python:orders.models:Order"
+      },
+      {
+        "path": "orders/repository.py",
+        "range": {
+          "start_line": 30,
+          "start_character": 70,
+          "end_line": 30,
+          "end_character": 81
+        },
+        "symbol_id": "python:orders.models:OrderStatus"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 18,
+          "start_character": 29,
+          "end_line": 18,
+          "end_character": 32
+        },
+        "symbol_id": "python:orders.repository:OrderRepository.get"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 20,
+          "start_character": 18,
+          "end_line": 20,
+          "end_character": 37
+        },
+        "symbol_id": "python:orders.service:DuplicateOrderError"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 22,
+          "start_character": 16,
+          "end_line": 22,
+          "end_character": 21
+        },
+        "symbol_id": "python:orders.models:Order"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 24,
+          "start_character": 18,
+          "end_line": 24,
+          "end_character": 22
+        },
+        "symbol_id": "python:orders.repository:OrderRepository.save"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 27,
+          "start_character": 25,
+          "end_line": 27,
+          "end_character": 31
+        },
+        "symbol_id": "python:payments.gateway:PaymentGateway.charge"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 29,
+          "start_character": 18,
+          "end_line": 29,
+          "end_character": 29
+        },
+        "symbol_id": "python:orders.models:Order.mark_failed"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 30,
+          "start_character": 22,
+          "end_line": 30,
+          "end_character": 26
+        },
+        "symbol_id": "python:orders.repository:OrderRepository.save"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 33,
+          "start_character": 14,
+          "end_line": 33,
+          "end_character": 23
+        },
+        "symbol_id": "python:orders.models:Order.mark_paid"
+      },
+      {
+        "path": "orders/service.py",
+        "range": {
+          "start_line": 34,
+          "start_character": 18,
+          "end_line": 34,
+          "end_character": 22
+        },
+        "symbol_id": "python:orders.repository:OrderRepository.save"
+      },
+      {
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 15,
+          "start_character": 26,
+          "end_line": 15,
+          "end_character": 31
+        },
+        "symbol_id": "python:payments.gateway:PaymentGateway._post"
+      },
+      {
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 23,
+          "start_character": 8,
+          "end_line": 23,
+          "end_character": 20
+        },
+        "symbol_id": "python:notifications.email:send_receipt"
+      },
+      {
+        "path": "payments/gateway.py",
+        "range": {
+          "start_line": 28,
+          "start_character": 18,
+          "end_line": 28,
+          "end_character": 35
+        },
+        "symbol_id": "python:payments.gateway:ChargeFailedError"
+      }
+    ]
+  },
+  "overview": {
+    "summary": "The orders subsystem turns a customer request into a persisted, paid order. One question drives its design: what happens when the same request arrives twice? A network retry can deliver the same create call two times. Without protection, the customer pays twice. The answer is an idempotency key. OrderService.create checks that key before it saves or charges anything.\n\nStart reading at OrderService.create in orders/service.py. Every other module serves that one method. The diagram below follows one example request, cus_1442 paying 8900 cents under key idem_7f3a, on its way through the system.",
+    "architecture": {
+      "modules": [
+        {
+          "id": "orders.service",
+          "label": "OrderService",
+          "path": "orders/service.py",
+          "description": "Entry point, owns the create flow"
+        },
+        {
+          "id": "orders.repository",
+          "label": "OrderRepository",
+          "path": "orders/repository.py",
+          "description": "SQLite persistence for orders"
+        },
+        {
+          "id": "payments.gateway",
+          "label": "PaymentGateway",
+          "path": "payments/gateway.py",
+          "description": "Charges the customer"
+        },
+        {
+          "id": "notifications.email",
+          "label": "notifications.email",
+          "path": "notifications/email.py",
+          "description": "Sends the receipt"
+        }
+      ],
+      "edges": [
+        {
+          "from": "orders.service",
+          "to": "orders.repository",
+          "kind": "calls",
+          "label": "get(key) / save(Order)",
+          "example": "save(Order(customer_id=\"cus_1442\", amount_cents=8900, status=PENDING, idempotency_key=\"idem_7f3a\"))"
+        },
+        {
+          "from": "orders.service",
+          "to": "payments.gateway",
+          "kind": "calls",
+          "label": "charge(customer_id, amount_cents, idempotency_key)",
+          "example": "charge(\"cus_1442\", 8900, \"idem_7f3a\") -> \"rcpt_idem_7f3\""
+        },
+        {
+          "from": "payments.gateway",
+          "to": "notifications.email",
+          "kind": "calls",
+          "label": "send_receipt(customer_id, receipt_id)",
+          "example": "send_receipt(\"cus_1442\", \"rcpt_idem_7f3\")"
+        }
+      ]
+    }
+  },
+  "flows": [
+    {
+      "id": "flow-create-order",
+      "title": "How an order is created",
+      "summary": "OrderService.create moves one request through three stages: reject duplicates, persist, then charge. Follow the example request cus_1442 / 8900 / idem_7f3a through each stage.",
+      "steps": [
+        {
+          "title": "Reject duplicates before any work",
+          "detail": "The flow starts with the duplicate check. create calls repo.get(idempotency_key) before it creates anything. If an order already exists under the same key, create raises DuplicateOrderError and stops. This is what makes retries safe. The key idem_7f3a maps to at most one order, no matter how many times the request arrives. Only a fresh key reaches the next stage, where the order is written to storage.",
+          "branches": [
+            {
+              "condition": "existing is not None",
+              "outcome": "create raises DuplicateOrderError. No order is created."
+            }
+          ],
+          "evidence": [
+            {
+              "symbol_id": "python:orders.service:OrderService.create",
+              "path": "orders/service.py",
+              "range": {
+                "start_line": 17,
+                "start_character": 4,
+                "end_line": 35,
+                "end_character": 20
+              },
+              "content_hash": "sha256:571d2ce46f2c86b1a7e16a6badf9df5da1ede81772884b91173e38d70a3ad5f7"
+            },
+            {
+              "symbol_id": "python:orders.repository:OrderRepository.get",
+              "path": "orders/repository.py",
+              "range": {
+                "start_line": 23,
+                "start_character": 4,
+                "end_line": 32,
+                "end_character": 20
+              },
+              "content_hash": "sha256:4ba5a83f9dd74085d718fbf31de1db3c050e07d51bf079439a9ace0e2859e31c"
+            }
+          ]
+        },
+        {
+          "title": "Persist first, then charge",
+          "detail": "With a fresh key, create builds an Order in PENDING state and saves it through repo.save before any money moves. The order of these two steps matters. If the process crashes during payment, the PENDING row is the evidence that a charge may have started. Then create calls gateway.charge(\"cus_1442\", 8900, \"idem_7f3a\"). On success, create marks the order PAID and saves it again. The gateway sends receipt rcpt_idem_7f3 to the customer by email.",
+          "error_path": "ChargeFailedError: create marks the order FAILED, saves it, and re-raises to the caller.",
+          "evidence": [
+            {
+              "symbol_id": "python:orders.service:OrderService.create",
+              "path": "orders/service.py",
+              "range": {
+                "start_line": 17,
+                "start_character": 4,
+                "end_line": 35,
+                "end_character": 20
+              },
+              "content_hash": "sha256:571d2ce46f2c86b1a7e16a6badf9df5da1ede81772884b91173e38d70a3ad5f7"
+            },
+            {
+              "symbol_id": "python:payments.gateway:PaymentGateway.charge",
+              "path": "payments/gateway.py",
+              "range": {
+                "start_line": 14,
+                "start_character": 4,
+                "end_line": 24,
+                "end_character": 25
+              },
+              "content_hash": "sha256:55e1e60405fd5249c7a381c99ad4fb15a007417df2df2e16a54c7fccfd669c9f"
+            },
+            {
+              "symbol_id": "python:orders.repository:OrderRepository.save",
+              "path": "orders/repository.py",
+              "range": {
+                "start_line": 16,
+                "start_character": 4,
+                "end_line": 21,
+                "end_character": 26
+              },
+              "content_hash": "sha256:b91d57026c786ddd82e49a8686eb8d45a53394cfb09dbafddb4b779ce691aa71"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept-idempotency-key",
+      "name": "idempotency_key",
+      "definition": "A caller-supplied key that makes create safe to retry. A second create call with the same key does not create a second order. It raises DuplicateOrderError instead.",
+      "contrast_with": "Order's default uuid4 key is server-generated, so each retry would get a new key and idempotency would be lost",
+      "evidence": [
+        {
+          "symbol_id": "python:orders.service:OrderService.create",
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 17,
+            "start_character": 4,
+            "end_line": 35,
+            "end_character": 20
+          },
+          "content_hash": "sha256:571d2ce46f2c86b1a7e16a6badf9df5da1ede81772884b91173e38d70a3ad5f7"
+        }
+      ]
+    }
+  ],
+  "invariants": [
+    {
+      "id": "inv-idempotency",
+      "statement": "The same idempotency_key never creates two orders",
+      "rationale": "create reads the key before it writes, so a duplicate request stops at the guard clause",
+      "status": "proposed",
+      "evidence": [
+        {
+          "symbol_id": "python:orders.service:OrderService.create",
+          "path": "orders/service.py",
+          "range": {
+            "start_line": 17,
+            "start_character": 4,
+            "end_line": 35,
+            "end_character": 20
+          },
+          "content_hash": "sha256:571d2ce46f2c86b1a7e16a6badf9df5da1ede81772884b91173e38d70a3ad5f7"
+        },
+        {
+          "symbol_id": "python:orders.repository:OrderRepository.get",
+          "path": "orders/repository.py",
+          "range": {
+            "start_line": 23,
+            "start_character": 4,
+            "end_line": 32,
+            "end_character": 20
+          },
+          "content_hash": "sha256:4ba5a83f9dd74085d718fbf31de1db3c050e07d51bf079439a9ace0e2859e31c"
+        }
+      ]
+    }
+  ],
+  "lessons": {
+    "predict": [
+      {
+        "question": "gateway.charge raises after repo.save has written the PENDING order. What state is the order left in, and what does the caller see?",
+        "reveal": "The order is saved in FAILED state and the exception propagates to the caller. The record survives, so a retry with the same key is rejected as a duplicate.",
+        "evidence": [
+          {
+            "symbol_id": "python:orders.service:OrderService.create",
+            "path": "orders/service.py",
+            "range": {
+              "start_line": 17,
+              "start_character": 4,
+              "end_line": 35,
+              "end_character": 20
+            },
+            "content_hash": "sha256:571d2ce46f2c86b1a7e16a6badf9df5da1ede81772884b91173e38d70a3ad5f7"
+          }
+        ]
+      }
+    ],
+    "explain_back": [
+      {
+        "prompt": "Explain why create saves the order before it charges the customer, and what would break if the two steps were swapped.",
+        "rubric": [
+          "A crash between charge and save would lose the record of a started charge",
+          "The PENDING row marks a possibly-started charge"
+        ]
+      }
+    ],
+    "localization": [
+      {
+        "task": "Receipts must go out by SMS instead of email. Where do you make the change?",
+        "answer": "In payments/gateway.py. PaymentGateway.charge calls send_receipt after a successful charge. Replace that call.",
+        "evidence": [
+          {
+            "symbol_id": "python:payments.gateway:PaymentGateway.charge",
+            "path": "payments/gateway.py",
+            "range": {
+              "start_line": 14,
+              "start_character": 4,
+              "end_line": 24,
+              "end_character": 25
+            },
+            "content_hash": "sha256:55e1e60405fd5249c7a381c99ad4fb15a007417df2df2e16a54c7fccfd669c9f"
+          }
+        ]
+      }
+    ]
+  },
+  "unknowns": [
+    "PaymentGateway._post is a stub, not a real HTTP call. Production failure modes are unverified."
+  ]
+}
