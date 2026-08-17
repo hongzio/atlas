@@ -127,6 +127,26 @@ technical writing, in classic style:
 
 ## Procedure: new analysis
 
+### 0. Preflight
+
+Check that `uv` is available before anything else:
+
+```bash
+uv --version
+```
+
+- If the command is not found, **stop**. Tell the user that Atlas scripts
+  require `uv` and suggest one install path, matching their setup:
+  `mise use -g uv@latest`, `brew install uv`, or
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`. Do not try to work
+  around it with the system Python — the scripts declare their dependencies
+  via PEP 723 and only `uv run` resolves them.
+- `git` is optional. Without it, the index records
+  `head_commit: "unversioned"` and incremental updates lose revision
+  tracking, but analysis still works.
+- The first run downloads dependencies, so it needs network access once.
+  Later runs work offline.
+
 ### 1. Confirm the goal
 
 Derive entry points from the user's learning goal — file paths or symbol names.
