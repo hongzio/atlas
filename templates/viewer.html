@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.6.0 -->
+<!-- atlas-template-version: 0.7.0 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -200,9 +200,31 @@ h2:first-child { margin-top: 0; }
 .line:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .line.flash { background: var(--flash); box-shadow: inset 2px 0 0 var(--accent); }
 .line .ln {
-  flex: none; width: 62px; text-align: right; padding-right: 10px; color: var(--muted);
+  flex: none; width: 80px; text-align: right; padding-right: 10px; color: var(--muted);
   user-select: none; font-variant-numeric: tabular-nums;
 }
+.blmark {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 15px; height: 14px; padding: 0 3px; margin-right: 5px;
+  border-radius: 7px; background: var(--accent-soft); color: var(--accent);
+  font-size: 9px; font-weight: 700; cursor: pointer; vertical-align: 1px;
+}
+.blmark:hover { background: color-mix(in srgb, var(--accent) 20%, var(--accent-soft)); }
+.bl-panel {
+  margin: 2px 12px 8px 80px; max-width: 460px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-ctl) var(--r-ctl) 0; padding: 8px 12px;
+  font: 12.5px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+  white-space: normal;
+}
+.bl-panel .bl-head {
+  font-size: 10px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .05em; margin-bottom: 3px;
+}
+.bl-panel a { display: block; color: var(--accent); cursor: pointer; padding: 2px 0; }
+.bl-panel a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.bl-hit { outline: 2px solid var(--accent); outline-offset: 2px; }
 .line .defmark { color: var(--defc); cursor: pointer; }
 .line .lc { white-space: pre; padding-right: 24px; }
 a.ref {
@@ -306,7 +328,8 @@ table.diff td.mono { font-family: ui-monospace, monospace; font-size: 12px; }
   aside.open { transform: translateX(0); box-shadow: var(--shadow); }
   .treefile, .treesym, .result { padding-top: 8px; padding-bottom: 8px; }
   .pad { padding: 16px 14px 40px; }
-  .line .ln { width: 44px; padding-right: 8px; }
+  .line .ln { width: 64px; padding-right: 8px; }
+  .bl-panel { margin-left: 64px; }
   .flowstep { gap: 10px; }
   table.diff td.mono, table.diff td code { white-space: normal; word-break: break-all; }
   footer { gap: 10px; }
@@ -521,7 +544,7 @@ document.addEventListener("click", e => {
     if (flow.summary) html += `<div class="card" style="white-space:pre-wrap">${esc(flow.summary)}</div>`;
     flow.steps.forEach((st, i) => {
       if (i > 0) html += `<div class="flowline"></div>`;
-      html += `<div class="card flowstep"><div class="num">${i + 1}</div><div class="body">` +
+      html += `<div class="card flowstep" id="bl-flow-${esc(flow.id)}-${i}"><div class="num">${i + 1}</div><div class="body">` +
         `<h4>${esc(st.title)}</h4>` +
         `<div class="detail">${esc(st.detail)}</div>`;
       for (const br of st.branches || []) {
@@ -540,7 +563,7 @@ document.addEventListener("click", e => {
   if ((A.concepts || []).length) {
     html += `<h2>Domain Concepts</h2>`;
     for (const c of A.concepts) {
-      html += `<div class="card"><h4 style="margin:0 0 4px">${esc(c.name)}</h4>` +
+      html += `<div class="card" id="bl-concept-${esc(c.id)}"><h4 style="margin:0 0 4px">${esc(c.name)}</h4>` +
         `<div>${esc(c.definition)}</div>` +
         (c.contrast_with ? `<div class="muted" style="margin-top:5px;font-size:13px">↔ ${esc(c.contrast_with)}</div>` : "") +
         chipsHtml(c.evidence) + `</div>`;
@@ -549,7 +572,7 @@ document.addEventListener("click", e => {
   if ((A.invariants || []).length) {
     html += `<h2>Invariants</h2>`;
     for (const inv of A.invariants) {
-      html += `<div class="card"><span class="badge ${esc(inv.status)}">${esc(inv.status)}</span> ` +
+      html += `<div class="card" id="bl-inv-${esc(inv.id)}"><span class="badge ${esc(inv.status)}">${esc(inv.status)}</span> ` +
         `<b>${esc(inv.statement)}</b>` +
         (inv.rationale ? `<div style="margin-top:5px">${esc(inv.rationale)}</div>` : "") +
         ((inv.validated_by_tests || []).length
@@ -567,7 +590,7 @@ document.addEventListener("click", e => {
   if ((L.predict || []).length) {
     html += `<h2>Predict before reveal</h2>`;
     L.predict.forEach((p, i) => {
-      html += `<div class="card"><b>Q${i + 1}.</b> ${esc(p.question)}` +
+      html += `<div class="card" id="bl-predict-${i}"><b>Q${i + 1}.</b> ${esc(p.question)}` +
         `<details class="reveal"><summary>Make your prediction first, then open</summary>` +
         `<div style="margin-top:8px;white-space:pre-wrap">${esc(p.reveal)}</div>${chipsHtml(p.evidence)}</details></div>`;
     });
@@ -583,7 +606,7 @@ document.addEventListener("click", e => {
   if ((L.localization || []).length) {
     html += `<h2>Change localization</h2>`;
     L.localization.forEach((p, i) => {
-      html += `<div class="card"><b>Task ${i + 1}.</b> ${esc(p.task)}` +
+      html += `<div class="card" id="bl-loc-${i}"><b>Task ${i + 1}.</b> ${esc(p.task)}` +
         `<details class="reveal"><summary>Decide where you would edit, then open</summary>` +
         `<div style="margin-top:8px;white-space:pre-wrap">${esc(p.answer)}</div>${chipsHtml(p.evidence)}</details></div>`;
     });
@@ -600,7 +623,7 @@ if ((A.findings || []).length) {
   let html = `<h2>Findings</h2>`;
   for (const f of A.findings) {
     const cls = f.severity === "blocking" ? "rejected" : "stale";
-    html += `<div class="card"><span class="badge ${cls}">${esc(f.severity)}</span> ` +
+    html += `<div class="card" id="bl-finding-${esc(f.id)}"><span class="badge ${cls}">${esc(f.severity)}</span> ` +
       `<b>${esc(f.claim)}</b>` +
       `<div style="margin-top:6px"><b class="muted">Risk:</b> ${esc(f.risk_scenario)}</div>` +
       (f.reproduction ? `<div style="margin-top:4px"><b class="muted">Repro:</b> ${esc(f.reproduction)}</div>` : "") +
@@ -721,6 +744,82 @@ document.addEventListener("keydown", e => {
   }
 });
 
+/* ---------------- backlinks: evidence pointer reverse index ---------------- */
+/* Maps path:start_line to the narrative items whose evidence points there,
+   so the code pane can answer "who references this code?". */
+const backlinksByPath = new Map(); // path -> Map(line -> [{label, tab, anchor}])
+function addBacklink(ev, label, tab, anchor) {
+  if (!ev || !ev.path) return;
+  const line = ev.range ? ev.range.start_line : 1;
+  if (!backlinksByPath.has(ev.path)) backlinksByPath.set(ev.path, new Map());
+  const m = backlinksByPath.get(ev.path);
+  if (!m.has(line)) m.set(line, []);
+  const arr = m.get(line);
+  if (!arr.some(x => x.anchor === anchor)) arr.push({ label, tab, anchor });
+}
+const short = (s, n) => (s || "").length > n ? s.slice(0, n - 1) + "…" : (s || "");
+for (const f of A.flows || []) {
+  f.steps.forEach((st, i) => {
+    const label = `Flow: ${short(f.title, 30)} / ${i + 1}. ${short(st.title, 40)}`;
+    const anchor = `bl-flow-${f.id}-${i}`;
+    (st.evidence || []).forEach(ev => addBacklink(ev, label, "flows", anchor));
+    (st.branches || []).forEach(b =>
+      (b.evidence || []).forEach(ev => addBacklink(ev, label, "flows", anchor)));
+  });
+}
+(A.concepts || []).forEach(c =>
+  (c.evidence || []).forEach(ev =>
+    addBacklink(ev, `Concept: ${short(c.name, 40)}`, "knowledge", `bl-concept-${c.id}`)));
+(A.invariants || []).forEach(inv =>
+  (inv.evidence || []).forEach(ev =>
+    addBacklink(ev, `Invariant: ${short(inv.statement, 50)}`, "knowledge", `bl-inv-${inv.id}`)));
+((A.lessons || {}).predict || []).forEach((p, i) =>
+  (p.evidence || []).forEach(ev =>
+    addBacklink(ev, `Lesson: predict Q${i + 1}`, "lessons", `bl-predict-${i}`)));
+((A.lessons || {}).localization || []).forEach((p, i) =>
+  (p.evidence || []).forEach(ev =>
+    addBacklink(ev, `Lesson: localization task ${i + 1}`, "lessons", `bl-loc-${i}`)));
+(A.findings || []).forEach(f =>
+  (f.evidence || []).forEach(ev =>
+    addBacklink(ev, `Finding: ${short(f.claim, 50)}`, "review", `bl-finding-${f.id}`)));
+if (A.overview.architecture) {
+  for (const m of A.overview.architecture.modules) {
+    if (m.path) {
+      addBacklink({ path: m.path }, `Architecture: ${short(m.label, 40)}`, "overview", "arch-wrap");
+    }
+  }
+}
+function backlinksAt(path, line) {
+  return backlinksByPath.get(path)?.get(line) || [];
+}
+function openBacklink(entry) {
+  navStack.push(snapshot());
+  if (navStack.length > 100) navStack.shift();
+  showTab(entry.tab);
+  setHash();
+  const target = document.getElementById(entry.anchor);
+  if (target) {
+    target.scrollIntoView({ block: "center" });
+    target.classList.add("bl-hit");
+    setTimeout(() => target.classList.remove("bl-hit"), 1600);
+  }
+}
+function toggleBacklinkPanel(lineEl, entries) {
+  const next = lineEl.nextElementSibling;
+  const wasOpen = next && next.classList.contains("bl-panel");
+  document.querySelectorAll(".bl-panel").forEach(x => x.remove());
+  if (wasOpen) return;
+  const panel = h(
+    `<div class="bl-panel"><div class="bl-head">Referenced by</div>` +
+    entries.map((e, i) => `<a data-i="${i}">${esc(e.label)}</a>`).join("") +
+    `</div>`
+  );
+  panel.querySelectorAll("a").forEach(a => {
+    a.onclick = () => openBacklink(entries[+a.dataset.i]);
+  });
+  lineEl.after(panel);
+}
+
 /* ---------------- Code pane ---------------- */
 function renderFile(path) {
   const file = filesByPath.get(path);
@@ -752,7 +851,11 @@ function renderFile(path) {
     const mark = def
       ? `<span class="defmark" data-sym="${esc(def.symbol_id)}" title="Symbol info: ${esc(def.qualname || def.name)}">◆ </span>`
       : "  ";
-    html += `<div class="line" data-l="${n}"><span class="ln">${mark}${n}</span><span class="lc">${content || " "}</span></div>`;
+    const bls = backlinksAt(path, n);
+    const blmark = bls.length
+      ? `<span class="blmark" data-l="${n}" title="Referenced by ${bls.length} artifact item${bls.length > 1 ? "s" : ""}">${bls.length}</span>`
+      : "";
+    html += `<div class="line" data-l="${n}"><span class="ln">${blmark}${mark}${n}</span><span class="lc">${content || " "}</span></div>`;
   }
   html += "</pre>";
   el("code-view").innerHTML = html;
@@ -787,6 +890,11 @@ function openSymbol(symId) {
   showSymbolInfo(s);
 }
 document.addEventListener("click", e => {
+  const bm = e.target.closest(".blmark[data-l]");
+  if (bm) {
+    toggleBacklinkPanel(bm.closest(".line"), backlinksAt(currentPath, +bm.dataset.l));
+    return;
+  }
   const ref = e.target.closest("a.ref[data-sym]");
   if (ref) { openSymbol(ref.dataset.sym); return; }
   const dm = e.target.closest(".defmark[data-sym]");
