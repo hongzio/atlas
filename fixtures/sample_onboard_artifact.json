@@ -17,7 +17,7 @@
     "truncations": []
   },
   "inputs": {
-    "skill_version": "0.2.0",
+    "skill_version": "0.3.0",
     "schema_version": "2.0"
   },
   "index": {

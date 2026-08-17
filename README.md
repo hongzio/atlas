@@ -49,7 +49,7 @@ PRD.md             product requirements (Korean)
 ## Development
 
 ```bash
-uv run pytest                     # 22 tests
+uv run pytest                     # 23 tests
 uv run skills/atlas-onboard/scripts/atlas_render.py \
-  fixtures/sample_artifact.json --out out/orders.html
+  fixtures/sample_onboard_artifact.json --out out/orders.html
 ```
