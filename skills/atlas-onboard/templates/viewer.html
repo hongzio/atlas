@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.7.1 -->
+<!-- atlas-template-version: 0.7.4 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -135,7 +135,8 @@ aside .search input:focus-visible { outline-offset: 0; border-color: transparent
 /* ---- tab panels ---- */
 section.tab { flex: 1; overflow: auto; display: none; min-width: 0; }
 section.tab.active { display: block; }
-.pad { padding: 24px 28px 48px; max-width: 920px; }
+/* content column: capped for prose readability, centered on wide screens */
+.pad { padding: 24px 28px 48px; max-width: 920px; margin: 0 auto; }
 h2 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; margin: 28px 0 10px; }
 h2:first-child { margin-top: 0; }
 .card {
@@ -236,13 +237,25 @@ a.ref:hover { color: var(--accent); background: var(--accent-soft); text-decorat
 .tok-kw { color: var(--kw); } .tok-str { color: var(--str); }
 .tok-com { color: var(--com); font-style: italic; } .tok-num { color: var(--num); }
 .tok-def { color: var(--defc); font-weight: 600; }
-#code-view::-webkit-scrollbar, #sidebar-list::-webkit-scrollbar { width: 10px; height: 10px; }
-#code-view::-webkit-scrollbar-thumb, #sidebar-list::-webkit-scrollbar-thumb {
-  background: var(--line-strong); border-radius: 5px;
-  border: 2px solid var(--code-bg); background-clip: padding-box;
+/* ---- scrollbars: one custom design everywhere ---- */
+html { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong); border-radius: 6px;
+  border: 3px solid transparent; background-clip: padding-box;
+  min-height: 40px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted); background-clip: padding-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
 /* ---- graph ---- */
 #tab-graph .wrap, #arch-wrap { overflow: auto; }
+/* use the full viewport width on the graph tab; center the svg when it is
+   narrower than the container (margin:auto never clips on overflow) */
+#graph-pad { max-width: none; }
+#tab-graph .wrap svg, #arch-wrap svg { display: block; margin: 0 auto; }
 svg text { font: 11.5px ui-monospace, monospace; fill: var(--ink); }
 svg .node rect { fill: var(--panel); stroke: var(--line-strong); rx: var(--r-ctl); cursor: pointer; }
 svg .node:hover rect { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
