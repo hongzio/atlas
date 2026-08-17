@@ -59,7 +59,7 @@ def make_review_artifact(idx: dict, artifact_id: str = "art_sample_review") -> d
         "title": "review: duplicate check removed from OrderService.create",
         "repository": {k: v for k, v in idx["repository"].items() if k != "root"},
         "slice": idx["slice"],
-        "inputs": {"skill_version": "0.1.0", "schema_version": "2.0"},
+        "inputs": {"skill_version": "0.2.0", "schema_version": "2.0"},
         "index": idx["index"],
         "changes": idx["changes"],
         "invariants": [
@@ -209,7 +209,7 @@ def make_artifact(idx: dict, artifact_id: str = "art_sample_orders") -> dict:
         "title": "orders subsystem onboarding",
         "repository": {k: v for k, v in idx["repository"].items() if k != "root"},
         "slice": idx["slice"],
-        "inputs": {"skill_version": "0.2.0", "schema_version": "2.0"},
+        "inputs": {"skill_version": "0.3.0", "schema_version": "2.0"},
         "index": idx["index"],
         "overview": {
             "summary": (

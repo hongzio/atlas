@@ -5,7 +5,7 @@ description: Review a code diff with evidence-backed findings, rendered as a sel
 
 # Atlas Review Skill
 
-**skill version: 0.1.0**
+**skill version: 0.2.0**
 
 Review the semantic impact of a diff, not its lines. Produce a small number of
 verified, evidence-backed findings, a Review Brief the reviewer can absorb in
@@ -36,7 +36,7 @@ Review adds these:
 3. **Test results are observations, not proof.** Report "tests pass under
    the conditions they observe", never "the change is correct".
 4. **Every finding faces a verifier.** A separate session tries to refute
-   each finding before it is published (step 6).
+   each finding before it is published (step 7).
 
 ## Procedure
 
@@ -173,7 +173,27 @@ Write JSON conforming to `$ATLAS/schemas/artifact.schema.json`:
 If nothing survives scrutiny, return zero findings and say "no verified
 findings". Do not invent suggestions to fill space.
 
-### 6. Independent verifier
+### 6. Flow read-through review
+
+Run the flow read-through review from `$ATLAS/SKILL.md` (procedure step 5):
+a reader subagent with fresh context reads each flow start to finish, with
+only the artifact JSON, and reports gaps per flow. Review adds these checks
+to the reader's brief:
+
+- After the last step, the reader must state what changed, why, and how
+  behavior differs from the base revision — from the artifact alone. If the
+  reader cannot, that is a gap.
+- The reader follows the diff links: each flow step that discusses a changed
+  file must let the reader reach the matching `changes.files` entry, and the
+  `base_source` there must show the base behavior the step describes.
+- `branches` that contrast base outcome versus current outcome must use the
+  same example data as the rest of the flow, so the reader tracks one
+  request through before and after.
+
+Fix gaps and re-run with a fresh subagent, at most 3 rounds, exactly as the
+onboarding procedure describes. Remaining gaps go to `unknowns`.
+
+### 7. Independent verifier
 
 Run a separate read-only session (a subagent with fresh context). Give it
 only: the locked intent, the diff, the index, and the candidate findings —
@@ -183,7 +203,7 @@ the result per finding in `verifier_verdict` (confirmed / refuted /
 inconclusive). Drop refuted findings; keep inconclusive ones only if the
 risk is high, and say why in `missing_evidence`.
 
-### 7. Validate → Render → Quickfix
+### 8. Validate → Render → Quickfix
 
 ```bash
 uv run $ATLAS/scripts/atlas_validate.py <workdir>/artifact.json
@@ -198,5 +218,6 @@ When reporting back to the user, include:
 - the verdict in one line (blocking findings? safe to merge?)
 - the HTML path, and the quickfix usage: `vim -q <output>.qf`
 - finding counts by severity, and the verifier's verdicts
+- the flow read-through result: rounds used, and gaps that remain (if any)
 - deterministic check results (command, exit code), baseline vs new failures
 - unknowns and unconfirmed assumptions from the intent lock

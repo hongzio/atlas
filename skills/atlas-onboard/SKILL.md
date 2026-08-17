@@ -5,7 +5,7 @@ description: Analyze a codebase subsystem and produce a self-contained HTML onbo
 
 # Atlas Onboarding Skill
 
-**skill version: 0.2.0**
+**skill version: 0.3.0**
 
 Investigate a codebase subsystem, produce a verifiable JSON artifact, and render it
 as self-contained HTML. The user explores architecture, execution paths, and
@@ -207,7 +207,40 @@ Write JSON conforming to `$ATLAS/schemas/artifact.schema.json`.
 - `inputs.schema_version`: "2.0", `inputs.model`: your model name
 - Evidence pointer ranges must match actual file lines.
 
-### 5. Validate → Render
+### 5. Flow read-through review
+
+A flow succeeds only if a reader who starts at step one and reads to the end
+understands the code with no gaps, using nothing but the artifact. Test this
+with a reader agent before you render:
+
+1. Spawn one subagent with fresh context. Give it only the artifact JSON
+   path and the instructions below. Do not give it your investigation notes
+   or repository access — the reader has only the artifact, so the reviewer
+   gets only the artifact.
+2. The subagent reads each flow from the first step to the last, in order.
+   When a step leaves a question open, it tries to answer the question
+   through the links the artifact provides: evidence pointers into the
+   embedded sources in `index`, `concepts`, the architecture diagram with
+   its example data, and `invariants`.
+3. The subagent reports one verdict per flow: `pass`, or a gap list. Each
+   gap names the flow id, the step index, the question the reader could not
+   answer, and the links it followed while trying. Gap kinds to look for:
+   - missing background: the step assumes knowledge no earlier step gives
+   - an undefined term, or two terms for one thing
+   - a jump: the connection between two adjacent steps is not stated
+   - evidence that does not show what the step claims
+   - a branch or `error_path` whose outcome is not described
+   - example data that breaks continuity between steps or with the diagram
+4. Fix every reported gap in the artifact: add or split steps, expand
+   `detail`, add a concept, correct evidence pointers. Never fix a gap by
+   deleting the claim that exposed it — depth stays (principle 6).
+5. Re-run with a fresh subagent (never reuse the previous one — it already
+   knows the answers). Stop at `pass` on every flow, or after 3 rounds.
+   Record gaps that remain after round 3 in `unknowns` and tell the user.
+
+The reader subagent is read-only and must not spawn further agents.
+
+### 6. Validate → Render
 
 ```bash
 uv run $ATLAS/scripts/atlas_validate.py <workdir>/artifact.json
@@ -238,7 +271,9 @@ uv run $ATLAS/scripts/atlas_update.py \
    - set `previous_artifact_id`
    - for each changed symbol, add a one-line `changes.symbols[].note`
      summarizing what the change means
-5. Validate → render (same as step 5 above). The viewer gains a Diff tab.
+5. Run the flow read-through review (step 5 above) on every flow you added
+   or edited. Flows copied verbatim from `reusable` need no re-review.
+6. Validate → render (same as step 6 above). The viewer gains a Diff tab.
 
 ## Reporting
 
@@ -246,5 +281,6 @@ When reporting back to the user, include:
 
 - The HTML path and how to open it
 - The slice scope (entries, hops, file count) and any truncated items
+- The flow read-through result: rounds used, and gaps that remain (if any)
 - A summary of unknowns (if any)
 - For incremental runs: changed symbol count, stale candidates, reuse ratio
