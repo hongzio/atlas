@@ -64,11 +64,45 @@ user, the PR description, or commit messages, fill:
 If the intent is unclear, ask the user one focused question. Record
 unconfirmed intent as an assumption in `unknowns`, not as fact.
 
-### 2. Diff index
+### 2. Determine the diff, then build the index
+
+The index always compares a checkout (worktree) against a base revision.
+Map the user's request to those two things first:
+
+| Request | Worktree to index | Base revision |
+|---|---|---|
+| uncommitted changes (default) | the user's checkout | `HEAD` |
+| current branch vs main | the user's checkout | `git merge-base main HEAD` |
+| branch A vs branch B | temporary worktree at B | `git merge-base A B` |
+| a PR | temporary worktree at the PR head | merge-base with the PR's base branch |
+
+- **Diff against the merge-base, not the branch tip.** `--base main` mixes
+  in commits that landed on main after the fork point.
+- **Never switch the user's checkout.** When the target is a branch or PR
+  that is not checked out, create a temporary worktree:
+
+```bash
+git worktree add <tmpdir>/<repo-name> <branch-or-sha>
+# for a PR:
+git fetch origin pull/<N>/head && git worktree add <tmpdir>/<repo-name> FETCH_HEAD
+```
+
+  Run the index with `--repo <tmpdir>/<repo-name>`. Name the directory
+  after the repository so `repository.id` stays meaningful. Remove the
+  worktree when the run ends, including on failure:
+  `git worktree remove <tmpdir>/<repo-name>`. Creating and removing this
+  worktree is the one allowed write; the user's checkout stays untouched.
+  A PR's description feeds the intent lock (step 1).
+- If the request matches none of these rows, or the base is ambiguous,
+  ask the user one focused question. Do not guess a base revision. The
+  script also rejects bad input loudly (unknown revision, not a git
+  repository, no python changes), so read its stderr on failure.
+
+Then build the index:
 
 ```bash
 uv run $ATLAS/scripts/atlas_index.py \
-  --repo <repo-root> \
+  --repo <worktree-root> \
   --base <base-revision> \
   --hops 2 \
   --out <workdir>/index.json
