@@ -100,6 +100,10 @@ sentence form, not the amount of information.
 - Code identifiers, paths, and commands go in code font (backticks in
   markdown fields); never inflect an identifier — add a noun and inflect
   that: "`create()` calls", not "create()s".
+- Narrative fields are markdown, and the viewer renders this subset:
+  paragraphs (blank line), `**bold**`, `*italic*`, backtick code,
+  `-`/`1.` lists, `#`/`##` headings, ``` fences, and `>` quotes.
+  Raw HTML and links are not rendered. Write within this subset.
 
 When the two standards conflict (e.g. contractions: STE forbids them, Google
 allows them), follow STE. When these rules conflict with depth, keep the

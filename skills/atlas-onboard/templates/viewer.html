@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.9.1 -->
+<!-- atlas-template-version: 0.10.0 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -192,7 +192,30 @@ h2:first-child { margin-top: 0; }
 }
 .flowstep .body { flex: 1; min-width: 0; }
 .flowstep h4 { margin: 0 0 5px; font-size: 14px; font-weight: 650; }
-.flowstep .detail { white-space: pre-wrap; color: color-mix(in srgb, var(--ink) 88%, var(--muted)); }
+.flowstep .detail { color: color-mix(in srgb, var(--ink) 88%, var(--muted)); }
+/* ---- rendered markdown ---- */
+.md p { margin: 0 0 10px; }
+.md p:last-child, .md ul:last-child, .md ol:last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md li { margin: 2px 0; }
+.md h3 { font-size: 14.5px; margin: 14px 0 6px; }
+.md h4 { font-size: 13.5px; margin: 12px 0 5px; }
+.md h3:first-child, .md h4:first-child { margin-top: 0; }
+.md blockquote {
+  margin: 0 0 10px; padding: 4px 12px;
+  border-left: 3px solid var(--line-strong); color: var(--muted);
+}
+.mdcode {
+  margin: 0 0 10px; padding: 10px 12px; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--r-ctl); font-size: 12.5px; line-height: 1.5;
+}
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em; padding: 1px 5px; border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.mdcode code { padding: 0; background: none; }
 .branch {
   border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 4%, transparent);
   border-radius: 0 var(--r-ctl) var(--r-ctl) 0;
@@ -506,6 +529,79 @@ const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(
 const el = (id) => document.getElementById(id);
 function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
 
+/* ---------------- markdown (small, safe subset) ----------------
+   Narrative fields are markdown. Everything is escaped first, then a few
+   constructs are re-introduced: `code`, **bold**, *italic*, headings,
+   -/1. lists, ``` fences, > quotes. No raw HTML, no links (self-contained). */
+function mdLine(text) {
+  let s = esc(text);
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=$|[\s).,:;!?])/g, "$1<em>$2</em>");
+  return s;
+}
+function mdi(text) {
+  return String(text).split("\n").map(mdLine).join("<br>");
+}
+function md(text) {
+  const lines = String(text).split("\n");
+  const out = [];
+  let para = [];
+  const flush = () => {
+    if (para.length) { out.push(`<p>${para.map(mdLine).join("<br>")}</p>`); para = []; }
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^```/.test(l)) {
+      flush();
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push(`<pre class="mdcode"><code>${esc(buf.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const hm = l.match(/^(#{1,6})\s+(.*)$/);
+    if (hm) {
+      flush();
+      const tag = hm[1].length === 1 ? "h3" : "h4";
+      out.push(`<${tag}>${mdLine(hm[2])}</${tag}>`);
+      i++;
+      continue;
+    }
+    if (/^\s*[-*]\s+/.test(l)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i]))
+        items.push(lines[i++].replace(/^\s*[-*]\s+/, ""));
+      out.push(`<ul>${items.map(x => `<li>${mdLine(x)}</li>`).join("")}</ul>`);
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(l)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i]))
+        items.push(lines[i++].replace(/^\s*\d+\.\s+/, ""));
+      out.push(`<ol>${items.map(x => `<li>${mdLine(x)}</li>`).join("")}</ol>`);
+      continue;
+    }
+    if (/^\s*>\s?/.test(l)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i]))
+        items.push(lines[i++].replace(/^\s*>\s?/, ""));
+      out.push(`<blockquote>${items.map(mdLine).join("<br>")}</blockquote>`);
+      continue;
+    }
+    if (/^\s*$/.test(l)) { flush(); i++; continue; }
+    para.push(l);
+    i++;
+  }
+  flush();
+  return `<div class="md">${out.join("")}</div>`;
+}
+
 /* ---------------- tabs ---------------- */
 const TABS = [
   ["overview", "Overview"], ["flows", "Flows"], ["graph", "Graph"], ["code", "Code"],
@@ -593,13 +689,13 @@ document.addEventListener("click", e => {
 /* ---------------- Overview ---------------- */
 {
   const o = A.overview;
-  let html = `<h2>Summary</h2><div class="card"><div style="white-space:pre-wrap">${esc(o.summary)}</div></div>`;
+  let html = `<h2>Summary</h2><div class="card">${md(o.summary)}</div>`;
   if (o.architecture && o.architecture.modules.length) {
     html += `<h2>Architecture</h2><div class="legend">Click a node to jump to code. Edge labels show the data that flows between components.</div><div id="arch-wrap"></div><div id="dataflow-wrap"></div>`;
   }
   if ((A.unknowns || []).length) {
     html += `<h2>Unknowns</h2><div class="card"><ul class="plain">` +
-      A.unknowns.map(u => `<li>${esc(u)}</li>`).join("") + `</ul>` +
+      A.unknowns.map(u => `<li>${mdi(u)}</li>`).join("") + `</ul>` +
       `<div class="muted" style="font-size:12px;margin-top:6px">Unverified items. Not filled in with guesses.</div></div>`;
   }
   el("tab-overview").innerHTML = html;
@@ -636,16 +732,16 @@ document.addEventListener("click", e => {
   let html = "";
   for (const flow of A.flows || []) {
     html += `<h2>${esc(flow.title)}</h2>`;
-    if (flow.summary) html += `<div class="card" style="white-space:pre-wrap">${esc(flow.summary)}</div>`;
+    if (flow.summary) html += `<div class="card">${md(flow.summary)}</div>`;
     flow.steps.forEach((st, i) => {
       if (i > 0) html += `<div class="flowline"></div>`;
       html += `<div class="card flowstep" id="bl-flow-${esc(flow.id)}-${i}"><div class="num">${i + 1}</div><div class="body">` +
         `<h4>${esc(st.title)}</h4>` +
-        `<div class="detail">${esc(st.detail)}</div>`;
+        `<div class="detail">${md(st.detail)}</div>`;
       for (const br of st.branches || []) {
-        html += `<div class="branch"><b>${esc(br.condition)}</b> → ${esc(br.outcome)}${chipsHtml(br.evidence)}</div>`;
+        html += `<div class="branch"><b>${mdi(br.condition)}</b> → ${mdi(br.outcome)}${chipsHtml(br.evidence)}</div>`;
       }
-      if (st.error_path) html += `<div class="errorpath">✕ ${esc(st.error_path)}</div>`;
+      if (st.error_path) html += `<div class="errorpath">✕ ${mdi(st.error_path)}</div>`;
       html += chipsHtml(st.evidence) + diffChipsHtml(st) + `</div></div>`;
     });
   }
@@ -659,8 +755,8 @@ document.addEventListener("click", e => {
     html += `<h2>Domain Concepts</h2>`;
     for (const c of A.concepts) {
       html += `<div class="card" id="bl-concept-${esc(c.id)}"><h4 style="margin:0 0 4px">${esc(c.name)}</h4>` +
-        `<div>${esc(c.definition)}</div>` +
-        (c.contrast_with ? `<div class="muted" style="margin-top:5px;font-size:13px">↔ ${esc(c.contrast_with)}</div>` : "") +
+        `<div>${md(c.definition)}</div>` +
+        (c.contrast_with ? `<div class="muted" style="margin-top:5px;font-size:13px">↔ ${mdi(c.contrast_with)}</div>` : "") +
         chipsHtml(c.evidence) + `</div>`;
     }
   }
@@ -668,8 +764,8 @@ document.addEventListener("click", e => {
     html += `<h2>Invariants</h2>`;
     for (const inv of A.invariants) {
       html += `<div class="card" id="bl-inv-${esc(inv.id)}"><span class="badge ${esc(inv.status)}">${esc(inv.status)}</span> ` +
-        `<b>${esc(inv.statement)}</b>` +
-        (inv.rationale ? `<div style="margin-top:5px">${esc(inv.rationale)}</div>` : "") +
+        `<b>${mdi(inv.statement)}</b>` +
+        (inv.rationale ? `<div style="margin-top:5px">${mdi(inv.rationale)}</div>` : "") +
         ((inv.validated_by_tests || []).length
           ? `<div class="muted" style="font-size:12.5px;margin-top:5px">tests: ${inv.validated_by_tests.map(esc).join(", ")}</div>` : "") +
         chipsHtml(inv.evidence) + `</div>`;
@@ -685,15 +781,15 @@ document.addEventListener("click", e => {
   if ((L.predict || []).length) {
     html += `<h2>Predict before reveal</h2>`;
     L.predict.forEach((p, i) => {
-      html += `<div class="card" id="bl-predict-${i}"><b>Q${i + 1}.</b> ${esc(p.question)}` +
+      html += `<div class="card" id="bl-predict-${i}"><b>Q${i + 1}.</b> ${mdi(p.question)}` +
         `<details class="reveal"><summary>Make your prediction first, then open</summary>` +
-        `<div style="margin-top:8px;white-space:pre-wrap">${esc(p.reveal)}</div>${chipsHtml(p.evidence)}</details></div>`;
+        `<div style="margin-top:8px">${md(p.reveal)}</div>${chipsHtml(p.evidence)}</details></div>`;
     });
   }
   if ((L.explain_back || []).length) {
     html += `<h2>Explain back</h2>`;
     L.explain_back.forEach((p, i) => {
-      html += `<div class="card">${esc(p.prompt)}` +
+      html += `<div class="card">${mdi(p.prompt)}` +
         `<textarea class="explain" data-i="${i}" placeholder="Explain in your own words. Saved locally."></textarea>` +
         `<div class="savenote">Your answer is stored only in this browser (localStorage); an evaluator reviews it in the next agent run.</div></div>`;
     });
@@ -701,9 +797,9 @@ document.addEventListener("click", e => {
   if ((L.localization || []).length) {
     html += `<h2>Change localization</h2>`;
     L.localization.forEach((p, i) => {
-      html += `<div class="card" id="bl-loc-${i}"><b>Task ${i + 1}.</b> ${esc(p.task)}` +
+      html += `<div class="card" id="bl-loc-${i}"><b>Task ${i + 1}.</b> ${mdi(p.task)}` +
         `<details class="reveal"><summary>Decide where you would edit, then open</summary>` +
-        `<div style="margin-top:8px;white-space:pre-wrap">${esc(p.answer)}</div>${chipsHtml(p.evidence)}</details></div>`;
+        `<div style="margin-top:8px">${md(p.answer)}</div>${chipsHtml(p.evidence)}</details></div>`;
     });
   }
   el("tab-lessons").innerHTML = html || `<div class="muted">No lessons</div>`;
@@ -719,11 +815,11 @@ if ((A.findings || []).length) {
   for (const f of A.findings) {
     const cls = { blocking: "rejected", warning: "stale", spotlight: "proposed" }[f.severity] || "stale";
     html += `<div class="card" id="bl-finding-${esc(f.id)}"><span class="badge ${cls}">${esc(f.severity)}</span> ` +
-      `<b>${esc(f.claim)}</b>` +
-      `<div style="margin-top:6px"><b class="muted">Risk:</b> ${esc(f.risk_scenario)}</div>` +
-      (f.reproduction ? `<div style="margin-top:4px"><b class="muted">Repro:</b> ${esc(f.reproduction)}</div>` : "") +
-      (f.suggested_verification ? `<div style="margin-top:4px"><b class="muted">Verify:</b> ${esc(f.suggested_verification)}</div>` : "") +
-      ((f.missing_evidence || []).length ? `<div style="margin-top:4px"><b class="muted">Missing:</b> ${f.missing_evidence.map(esc).join("; ")}</div>` : "") +
+      `<b>${mdi(f.claim)}</b>` +
+      `<div style="margin-top:6px"><b class="muted">Risk:</b> ${mdi(f.risk_scenario)}</div>` +
+      (f.reproduction ? `<div style="margin-top:4px"><b class="muted">Repro:</b> ${mdi(f.reproduction)}</div>` : "") +
+      (f.suggested_verification ? `<div style="margin-top:4px"><b class="muted">Verify:</b> ${mdi(f.suggested_verification)}</div>` : "") +
+      ((f.missing_evidence || []).length ? `<div style="margin-top:4px"><b class="muted">Missing:</b> ${f.missing_evidence.map(mdi).join("; ")}</div>` : "") +
       (f.verifier_verdict ? `<div style="margin-top:4px"><b class="muted">Verifier:</b> ${esc(f.verifier_verdict)}</div>` : "") +
       chipsHtml(f.evidence) + diffChipsHtml(f) + `</div>`;
   }
@@ -796,7 +892,7 @@ if (A.changes) {
         `<td class="mono">${symById.has(s.symbol_id)
           ? `<a class="ref" data-sym="${esc(s.symbol_id)}">${esc(s.symbol_id)}</a>`
           : esc(s.symbol_id)}</td>` +
-        `<td>${esc(s.note || "")}</td></tr>`).join("") + `</table></div>`;
+        `<td>${mdi(s.note || "")}</td></tr>`).join("") + `</table></div>`;
   }
   if ((C.files || []).length) {
     if (C.files.some(f => f.base_source !== undefined || filesByPath.has(f.path))) {
