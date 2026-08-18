@@ -5,7 +5,7 @@ description: Analyze a codebase subsystem and produce a self-contained HTML onbo
 
 # Atlas Onboarding Skill
 
-**skill version: 0.3.0**
+**skill version: 0.4.0**
 
 Investigate a codebase subsystem, produce a verifiable JSON artifact, and render it
 as self-contained HTML. The user explores architecture, execution paths, and
@@ -144,6 +144,21 @@ uv --version
 - `git` is optional. Without it, the index records
   `head_commit: "unversioned"` and incremental updates lose revision
   tracking, but analysis still works.
+- Language servers are optional. The indexer resolves calls and references
+  through a language server when one is on PATH, and falls back to generic
+  unique-name matching when none is found:
+
+  | Language | Files | Servers probed, in order |
+  |---|---|---|
+  | Python | `.py` | `pyright-langserver`, `basedpyright-langserver`, `jedi-language-server`, `pylsp` |
+  | TypeScript | `.ts`, `.tsx` | `typescript-language-server` |
+  | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` | `typescript-language-server` |
+  | Go | `.go` | `gopls` |
+
+  The index records the tier per language in `index.resolution`
+  (`lsp:<server>` or `generic`). Do not install servers yourself; if the
+  tier is `generic`, tell the user which server would raise fidelity and
+  continue with what is available.
 - The first run downloads dependencies, so it needs network access once.
   Later runs work offline.
 
@@ -162,10 +177,16 @@ uv run $ATLAS/scripts/atlas_index.py \
   --out <workdir>/index.json
 ```
 
-- Check the stderr summary (files/symbols/edges/unresolved).
+- Entries can be files in any supported language (Python, TypeScript,
+  JavaScript, Go); one index can span several languages.
+- Check the stderr summary (files/symbols/edges/unresolved/tiers).
 - If the slice is too large (warning emitted), reduce `--hops` to 1 or narrow
   the entries.
 - If `truncations` is non-empty, tell the user.
+- Mind the resolution tier when you interpret edges. An edge with resolution
+  `name_match` is a unique-name heuristic, not proof of a call path. When a
+  claim rests only on `name_match` edges, verify it in the source or record
+  the doubt in `unknowns`.
 
 ### 3. Investigate (read-only)
 
@@ -281,6 +302,8 @@ When reporting back to the user, include:
 
 - The HTML path and how to open it
 - The slice scope (entries, hops, file count) and any truncated items
+- The resolution tier per language, and which server would raise fidelity
+  when a tier is `generic`
 - The flow read-through result: rounds used, and gaps that remain (if any)
 - A summary of unknowns (if any)
 - For incremental runs: changed symbol count, stale candidates, reuse ratio

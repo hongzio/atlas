@@ -29,6 +29,7 @@ def index_output(tmp_path_factory) -> dict:
         "--repo", str(SAMPLE_REPO),
         "--entry", "orders/service.py",
         "--hops", "2",
+        "--no-lsp",
         "--out", str(out),
     )
     assert proc.returncode == 0, proc.stderr
@@ -59,7 +60,7 @@ def make_review_artifact(idx: dict, artifact_id: str = "art_sample_review") -> d
         "title": "review: duplicate check removed from OrderService.create",
         "repository": {k: v for k, v in idx["repository"].items() if k != "root"},
         "slice": idx["slice"],
-        "inputs": {"skill_version": "0.2.0", "schema_version": "2.0"},
+        "inputs": {"skill_version": "0.3.0", "schema_version": "2.0"},
         "index": idx["index"],
         "changes": idx["changes"],
         "invariants": [
@@ -209,7 +210,7 @@ def make_artifact(idx: dict, artifact_id: str = "art_sample_orders") -> dict:
         "title": "orders subsystem onboarding",
         "repository": {k: v for k, v in idx["repository"].items() if k != "root"},
         "slice": idx["slice"],
-        "inputs": {"skill_version": "0.3.0", "schema_version": "2.0"},
+        "inputs": {"skill_version": "0.4.0", "schema_version": "2.0"},
         "index": idx["index"],
         "overview": {
             "summary": (

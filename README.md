@@ -34,6 +34,14 @@ npx skills add hongzio/atlas --all
   (network needed once).
 - `git` — optional for onboarding (degrades to `unversioned`), required for
   review (`--base` diff).
+- Language servers — optional. With one on PATH, call/reference resolution
+  uses the server; without, it falls back to generic name matching:
+
+  | Language | Servers probed |
+  |---|---|
+  | Python | `pyright-langserver`, `basedpyright-langserver`, `jedi-language-server`, `pylsp` |
+  | TypeScript / JavaScript | `typescript-language-server` (+ `typescript`) |
+  | Go | `gopls` |
 
 ## Repository layout
 
@@ -41,7 +49,7 @@ npx skills add hongzio/atlas --all
 skills/
   atlas-onboard/   SKILL.md, scripts/, schemas/, templates/
   atlas-review/    SKILL.md, scripts/atlas_quickfix.py
-tests/             pytest suite + sample_repo
+tests/             pytest suite + sample_repo (py) / sample_ts_repo / sample_go_repo
 fixtures/          sample learning and review artifacts (Phase 0 exit)
 PRD.md             product requirements (Korean)
 ```
@@ -49,7 +57,7 @@ PRD.md             product requirements (Korean)
 ## Development
 
 ```bash
-uv run pytest                     # 23 tests
+uv run pytest                     # LSP-tier tests skip unless a server is on PATH
 uv run skills/atlas-onboard/scripts/atlas_render.py \
   fixtures/sample_onboard_artifact.json --out out/orders.html
 ```

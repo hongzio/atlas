@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.8.2 -->
+<!-- atlas-template-version: 0.9.0 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -794,17 +794,37 @@ if (A.changes) {
   el("tab-diff").innerHTML = html;
 }
 
-/* ---------------- Python highlighter ---------------- */
-const PY_TOKEN = new RegExp(
-  [
-    "(#.*$)",                                                     // 1 comment
-    "(\"\"\"|'''|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*')", // 2 string
-    "\\b(def|class|return|if|elif|else|for|while|try|except|finally|raise|import|from|as|with|pass|break|continue|lambda|yield|async|await|not|and|or|in|is|None|True|False|global|nonlocal|del|assert|self|cls)\\b", // 3 kw
-    "\\b(\\d+(?:\\.\\d+)?)\\b",                                   // 4 number
-  ].join("|"), "gm");
-function highlight(text) {
+/* ---------------- Syntax highlighter ---------------- */
+/* Group order per language regex: 1 comment, 2 string, 3 keyword, 4 number. */
+const TOKEN_RULES = {
+  python: new RegExp(
+    [
+      "(#.*$)",
+      "(\"\"\"|'''|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*')",
+      "\\b(def|class|return|if|elif|else|for|while|try|except|finally|raise|import|from|as|with|pass|break|continue|lambda|yield|async|await|not|and|or|in|is|None|True|False|global|nonlocal|del|assert|self|cls)\\b",
+      "\\b(\\d+(?:\\.\\d+)?)\\b",
+    ].join("|"), "gm"),
+  typescript: new RegExp(
+    [
+      "(\\/\\/.*$|\\/\\*[\\s\\S]*?\\*\\/)",
+      "(\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`)",
+      "\\b(const|let|var|function|class|return|if|else|for|while|do|try|catch|finally|throw|new|import|from|export|default|extends|implements|interface|enum|type|async|await|this|super|switch|case|break|continue|typeof|instanceof|in|of|null|undefined|true|false|void|yield|static|readonly|private|public|protected|abstract|as|get|set)\\b",
+      "\\b(\\d+(?:\\.\\d+)?)\\b",
+    ].join("|"), "gm"),
+  go: new RegExp(
+    [
+      "(\\/\\/.*$|\\/\\*[\\s\\S]*?\\*\\/)",
+      "(\"(?:\\\\.|[^\"\\\\])*\"|`[^`]*`|'(?:\\\\.|[^'\\\\])*')",
+      "\\b(func|type|struct|interface|package|import|return|if|else|for|range|switch|case|break|continue|default|go|defer|chan|map|select|var|const|nil|true|false|fallthrough|goto)\\b",
+      "\\b(\\d+(?:\\.\\d+)?)\\b",
+    ].join("|"), "gm"),
+};
+TOKEN_RULES.javascript = TOKEN_RULES.typescript;
+function highlight(text, lang) {
+  const re = TOKEN_RULES[lang];
+  if (!re) return esc(text);
   let out = "", last = 0;
-  for (const m of text.matchAll(PY_TOKEN)) {
+  for (const m of text.matchAll(re)) {
     out += esc(text.slice(last, m.index));
     const cls = m[1] ? "tok-com" : m[2] ? "tok-str" : m[3] ? "tok-kw" : "tok-num";
     out += `<span class="${cls}">${esc(m[0])}</span>`;
@@ -991,6 +1011,7 @@ function renderFile(path) {
   currentPath = path;
   el("code-path").textContent = path;
   const lines = fileLines.get(path);
+  const lang = file.language;
   let html = "<pre>";
   for (let i = 0; i < lines.length; i++) {
     const n = i + 1;
@@ -1004,13 +1025,13 @@ function renderFile(path) {
       for (const r of refs) {
         const s = r.range.start_character, e = r.range.end_character;
         if (s < col || e > text.length) continue;
-        content += highlight(text.slice(col, s));
-        content += `<a class="ref" data-sym="${esc(r.symbol_id)}">${highlight(text.slice(s, e))}</a>`;
+        content += highlight(text.slice(col, s), lang);
+        content += `<a class="ref" data-sym="${esc(r.symbol_id)}">${highlight(text.slice(s, e), lang)}</a>`;
         col = e;
       }
-      content += highlight(text.slice(col));
+      content += highlight(text.slice(col), lang);
     } else {
-      content = highlight(lines[i]);
+      content = highlight(lines[i], lang);
     }
     const mark = def
       ? `<span class="defmark" data-sym="${esc(def.symbol_id)}" title="Symbol info: ${esc(def.qualname || def.name)}">◆ </span>`

@@ -5,7 +5,7 @@ description: Review a code diff with evidence-backed findings, rendered as a sel
 
 # Atlas Review Skill
 
-**skill version: 0.2.0**
+**skill version: 0.3.0**
 
 Review the semantic impact of a diff, not its lines. Produce a small number of
 verified, evidence-backed findings, a Review Brief the reviewer can absorb in
@@ -96,7 +96,8 @@ git fetch origin pull/<N>/head && git worktree add <tmpdir>/<repo-name> FETCH_HE
 - If the request matches none of these rows, or the base is ambiguous,
   ask the user one focused question. Do not guess a base revision. The
   script also rejects bad input loudly (unknown revision, not a git
-  repository, no python changes), so read its stderr on failure.
+  repository, no changes in a supported language), so read its stderr on
+  failure.
 
 Then build the index:
 
@@ -108,10 +109,14 @@ uv run $ATLAS/scripts/atlas_index.py \
   --out <workdir>/index.json
 ```
 
-- `--base` compares the worktree against the base revision. Changed python
-  files become entry points automatically; add `--entry` for extra context.
+- `--base` compares the worktree against the base revision. Changed files in
+  supported languages become entry points automatically; add `--entry` for
+  extra context.
 - The output contains `changes` (added/removed/modified files and symbols)
   and `repository.base_commit`. Copy both into the artifact.
+- `index.resolution` records the tier per language (`lsp:<server>` or
+  `generic`). Treat `name_match` edges as heuristic when judging impact
+  (see the atlas-onboard skill, step 2).
 
 ### 3. Deterministic checks
 

@@ -12,27 +12,28 @@ def test_symbols_extracted(index_output):
     assert "python:orders.models:Order" in ids
 
 
-def test_annotation_based_resolution_is_exact(index_output):
+def test_generic_tier_resolves_unique_names(index_output):
+    # without an LSP server the tier is generic: unique names resolve as name_match
+    assert index_output["index"]["resolution"] == {"python": "generic"}
     calls = edges_of(index_output, "calls")
     assert (
         "python:orders.service:OrderService.create",
-        "python:orders.repository:OrderRepository.get",
-        "exact",
+        "python:payments.gateway:PaymentGateway.charge",
+        "name_match",
     ) in calls
     assert (
         "python:orders.service:OrderService.create",
-        "python:payments.gateway:PaymentGateway.charge",
-        "exact",
+        "python:orders.repository:OrderRepository.save",
+        "name_match",
     ) in calls
 
 
 def test_no_builtin_method_false_positive(index_output):
-    # payload.get(...) must not be falsely linked to OrderRepository.get
+    # blocklisted member-call names (get, ...) are never name-matched:
+    # payload.get(...) must not link to OrderRepository.get, so in the generic
+    # tier self.repo.get(...) stays unresolved too
     calls = edges_of(index_output, "calls")
-    assert not any(
-        src.startswith("python:payments.gateway:PaymentGateway._post") and "OrderRepository.get" in dst
-        for src, dst, _ in calls
-    )
+    assert not any("OrderRepository.get" in dst for _, dst, _ in calls)
 
 
 def test_references_are_clickable_spans(index_output):
@@ -52,7 +53,7 @@ def test_decorator_produces_edge_and_reference(index_output):
     assert (
         "python:orders.audit:record_audit",
         "python:orders.audit:logged",
-        "exact",
+        "name_match",
     ) in calls
     refs = index_output["index"]["references"]
     assert any(
@@ -60,14 +61,6 @@ def test_decorator_produces_edge_and_reference(index_output):
         and r["symbol_id"] == "python:orders.audit:logged"
         for r in refs
     )
-
-
-def test_non_call_usages_are_referenced(index_output):
-    refs = [r for r in index_output["index"]["references"] if r["path"] == "orders/audit.py"]
-    # annotation: repo: OrderRepository
-    assert any(r["symbol_id"] == "python:orders.repository:OrderRepository" for r in refs)
-    # default value and module-level registration: sink=null_sink, [null_sink]
-    assert len([r for r in refs if r["symbol_id"] == "python:orders.audit:null_sink"]) >= 2
 
 
 def test_import_names_are_referenced(index_output):

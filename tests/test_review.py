@@ -43,7 +43,7 @@ def diff_index(tmp_path, repo):
     out = tmp_path / "idx.json"
     proc = run_script(
         "atlas_index.py", "--repo", str(repo),
-        "--base", "HEAD", "--hops", "2", "--out", str(out),
+        "--base", "HEAD", "--hops", "2", "--no-lsp", "--out", str(out),
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(out.read_text())
