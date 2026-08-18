@@ -103,6 +103,8 @@ class FileIndex:
     imports: dict[str, str] = field(default_factory=dict)
     # (enclosing Symbol, callee node)
     calls: list[tuple[Symbol, Node]] = field(default_factory=list)
+    # (enclosing Symbol, identifier/attribute node, receiver name locally bound?)
+    usages: list[tuple[Symbol, Node, bool]] = field(default_factory=list)
     # class qualname -> {instance attr name -> unresolved type expression string}
     class_attrs: dict[str, dict[str, str]] = field(default_factory=dict)
 
@@ -235,34 +237,147 @@ class Extractor:
         self.file.symbols.append(self.module_symbol)
 
     def run(self, tree_root: Node) -> FileIndex:
-        self._walk(tree_root, scope=[], enclosing=self.module_symbol)
+        self._walk(tree_root, scope=[], enclosing=self.module_symbol,
+                   bound=self._scope_bindings(tree_root))
         return self.file
 
     # scope: class/function nesting path. enclosing: innermost symbol that owns calls.
-    def _walk(self, node: Node, scope: list[tuple[str, str]], enclosing: Symbol) -> None:
+    # bound: names bound in the enclosing scopes (params, assignment/for/with targets);
+    # identifiers matching them are locals and never linked to same-named symbols.
+    def _walk(self, node: Node, scope: list[tuple[str, str]], enclosing: Symbol,
+              bound: frozenset[str]) -> None:
         for child in node.children:
-            t = child.type
-            if t == "decorated_definition":
-                inner = child.child_by_field_name("definition")
-                if inner is not None:
-                    self._definition(inner, outer=child, scope=scope, enclosing=enclosing)
-                continue
-            if t in ("function_definition", "class_definition"):
-                self._definition(child, outer=child, scope=scope, enclosing=enclosing)
-                continue
-            if t in ("import_statement", "import_from_statement"):
-                self._import(child)
-                # no need to descend into import statements
-                continue
-            if t == "call":
-                self._call(child, enclosing)
-                # keep walking for nested calls/lambdas inside arguments
-            self._walk(child, scope, enclosing)
+            self._visit(child, scope, enclosing, bound)
 
-    def _definition(self, node: Node, outer: Node, scope: list[tuple[str, str]], enclosing: Symbol) -> None:
+    def _visit(self, node: Node, scope: list[tuple[str, str]], enclosing: Symbol,
+               bound: frozenset[str]) -> None:
+        t = node.type
+        if t == "decorated_definition":
+            inner = node.child_by_field_name("definition")
+            if inner is None:
+                return
+            sym = self._definition(inner, outer=node, scope=scope,
+                                   enclosing=enclosing, bound=bound)
+            owner = sym or enclosing
+            for dec in node.children:
+                if dec.type != "decorator":
+                    continue
+                expr = next((c for c in dec.children if c.is_named), None)
+                if expr is None:
+                    continue
+                # a decorator is a call: @foo and @foo(...) both invoke foo
+                if expr.type in ("identifier", "attribute"):
+                    self.file.calls.append((owner, expr))
+                elif expr.type == "call":
+                    self._call(expr, owner)
+                    self._walk(expr, scope, owner, bound)
+                else:
+                    self._walk(expr, scope, owner, bound)
+            return
+        if t in ("function_definition", "class_definition"):
+            self._definition(node, outer=node, scope=scope, enclosing=enclosing, bound=bound)
+            return
+        if t in ("import_statement", "import_from_statement"):
+            self._import(node)
+            # no need to descend into import statements
+            return
+        if t == "call":
+            self._call(node, enclosing)
+            # keep walking for nested calls/lambdas inside arguments
+            self._walk(node, scope, enclosing, bound)
+            return
+        if t == "attribute":
+            obj = node.child_by_field_name("object")
+            obj_bound = False
+            if obj is not None and obj.type == "identifier":
+                name = node_text(obj, self.source)
+                obj_bound = name in bound and name not in ("self", "cls")
+            self.file.usages.append((enclosing, node, obj_bound))
+            # descend only into the receiver; the attribute name is covered above
+            if obj is not None:
+                self._visit(obj, scope, enclosing, bound)
+            return
+        if t == "keyword_argument":
+            # the keyword name is not a symbol usage; only the value is
+            value = node.child_by_field_name("value")
+            if value is not None:
+                self._visit(value, scope, enclosing, bound)
+            return
+        if t == "identifier":
+            if node_text(node, self.source) not in bound:
+                self.file.usages.append((enclosing, node, False))
+            return
+        self._walk(node, scope, enclosing, bound)
+
+    def _param_names(self, def_node: Node) -> set[str]:
+        names: set[str] = set()
+        params = def_node.child_by_field_name("parameters")
+        if params is None:
+            return names
+        for p in params.children:
+            pt = p.type
+            if pt == "identifier":
+                names.add(node_text(p, self.source))
+            elif pt in ("default_parameter", "typed_default_parameter"):
+                nm = p.child_by_field_name("name")
+                if nm is not None and nm.type == "identifier":
+                    names.add(node_text(nm, self.source))
+            elif pt in ("typed_parameter", "list_splat_pattern", "dictionary_splat_pattern"):
+                ident = next((c for c in p.children if c.type == "identifier"), None)
+                if ident is not None:
+                    names.add(node_text(ident, self.source))
+        return names
+
+    def _scope_bindings(self, scope_root: Node) -> frozenset[str]:
+        """Names bound in this scope, without descending into nested definitions."""
+        names: set[str] = set()
+
+        def add_targets(t: Node) -> None:
+            if t.type == "identifier":
+                names.add(node_text(t, self.source))
+                return
+            if t.type in (
+                "tuple_pattern", "list_pattern", "pattern_list",
+                "parenthesized_expression", "list_splat_pattern",
+                "dictionary_splat_pattern", "as_pattern_target",
+            ):
+                for c in t.children:
+                    if c.is_named:
+                        add_targets(c)
+
+        def scan(n: Node) -> None:
+            for c in n.children:
+                ct = c.type
+                if ct in ("function_definition", "class_definition", "decorated_definition"):
+                    continue
+                if ct in ("assignment", "augmented_assignment", "for_statement", "for_in_clause"):
+                    left = c.child_by_field_name("left")
+                    if left is not None:
+                        add_targets(left)
+                elif ct == "as_pattern":
+                    alias = c.child_by_field_name("alias")
+                    if alias is not None:
+                        add_targets(alias)
+                elif ct == "named_expression":
+                    nm = c.child_by_field_name("name")
+                    if nm is not None:
+                        add_targets(nm)
+                elif ct == "lambda":
+                    names.update(self._param_names(c))
+                elif ct in ("global_statement", "nonlocal_statement"):
+                    for g in c.children:
+                        if g.type == "identifier":
+                            names.add(node_text(g, self.source))
+                scan(c)
+
+        scan(scope_root)
+        return frozenset(names)
+
+    def _definition(self, node: Node, outer: Node, scope: list[tuple[str, str]],
+                    enclosing: Symbol, bound: frozenset[str]) -> Symbol | None:
         name_node = node.child_by_field_name("name")
         if name_node is None:
-            return
+            return None
         name = node_text(name_node, self.source)
         is_class = node.type == "class_definition"
         parent_kinds = [k for k, _ in scope]
@@ -291,13 +406,23 @@ class Extractor:
         )
         self.file.symbols.append(sym)
 
+        child_scope = scope + [("class" if is_class else "function", name)]
         body = node.child_by_field_name("body")
+        child_bound = bound | self._param_names(node)
         if body is not None:
-            child_scope = scope + [("class" if is_class else "function", name)]
+            child_bound = child_bound | self._scope_bindings(body)
+        # annotations, defaults, and base classes are evaluated at definition time,
+        # but attributing their usages to the defined symbol keeps the graph useful
+        for extra in ("parameters", "return_type", "superclasses"):
+            part = node.child_by_field_name(extra)
+            if part is not None:
+                self._walk(part, child_scope, sym, child_bound)
+        if body is not None:
             # calls in a class body run at class-definition time, so the class symbol owns them
-            self._walk(body, child_scope, enclosing=sym)
+            self._walk(body, child_scope, sym, child_bound)
             if is_class:
                 self._collect_class_attrs(body, qualname)
+        return sym
 
     def _collect_class_attrs(self, class_body: Node, class_qualname: str) -> None:
         """Collect instance attr types from __init__ annotations and self.x = ... assignments."""
@@ -397,6 +522,9 @@ class Extractor:
                         continue
                     name = node_text(child, self.source)
                     self.file.imports[name] = f"{base}.{name}" if base else name
+                    ident = next((c for c in child.children if c.type == "identifier"), None)
+                    if ident is not None and "." not in name:
+                        self.file.usages.append((self.module_symbol, ident, False))
                 elif child.type == "aliased_import":
                     dn = child.child_by_field_name("name")
                     al = child.child_by_field_name("alias")
@@ -405,6 +533,7 @@ class Extractor:
                         self.file.imports[node_text(al, self.source)] = (
                             f"{base}.{name}" if base else name
                         )
+                        self.file.usages.append((self.module_symbol, al, False))
                 elif child.type == "wildcard_import":
                     pass  # from x import * is not resolved (left as unresolved)
         _ = src
@@ -468,6 +597,10 @@ class Resolver:
             self._import_edges(f)
             for enclosing, fn_node in f.calls:
                 self._resolve_call(f, enclosing, fn_node)
+        # after calls so call-site references win span dedup over usage references
+        for f in self.files:
+            for enclosing, node, obj_bound in f.usages:
+                self._resolve_usage(f, enclosing, node, obj_bound)
 
     def _import_edges(self, f: FileIndex) -> None:
         seen_dst: set[str] = set()
@@ -558,6 +691,59 @@ class Resolver:
                 site_range=rng,
             )
         )
+        self.references.append(
+            Reference(path=f.path, start=rng[0], end=rng[1], symbol_id=target.symbol_id)
+        )
+
+    def _resolve_usage(self, f: FileIndex, enclosing: Symbol, node: Node,
+                       obj_bound: bool) -> None:
+        """Non-call symbol usage → reference only (no edge). Exact resolution only:
+        no name_match, so a miss stays a plain identifier (precision first)."""
+        source = f.source.encode("utf-8")
+
+        def text(n: Node) -> str:
+            return source[n.start_byte : n.end_byte].decode("utf-8", errors="replace")
+
+        target: Symbol | None = None
+        click: Node = node
+
+        if node.type == "identifier":
+            name = text(node)
+            target = self._lookup_local(f, enclosing, name) or self._lookup_import(f, name)
+        elif node.type == "attribute":
+            obj = node.child_by_field_name("object")
+            attr = node.child_by_field_name("attribute")
+            if obj is None or attr is None:
+                return
+            click = attr
+            attr_name = text(attr)
+            if obj.type == "identifier":
+                obj_name = text(obj)
+                if obj_name in ("self", "cls"):
+                    target = self._lookup_in_class(enclosing, attr_name)
+                elif obj_bound:
+                    target = None  # receiver is a local; its type is unknown
+                elif obj_name in f.imports:
+                    target = self.by_full.get(f"{f.imports[obj_name]}.{attr_name}")
+                else:
+                    base = self._lookup_local(f, enclosing, obj_name)
+                    if base is not None and base.kind == "class":
+                        target = self.by_full.get(f"{base.full_name}.{attr_name}")
+            elif obj.type == "attribute":
+                inner_obj = obj.child_by_field_name("object")
+                inner_attr = obj.child_by_field_name("attribute")
+                if (
+                    inner_obj is not None and inner_attr is not None
+                    and inner_obj.type == "identifier"
+                    and text(inner_obj) in ("self", "cls")
+                ):
+                    target = self._lookup_via_attr_type(
+                        enclosing, text(inner_attr), attr_name
+                    )
+
+        if target is None:
+            return
+        rng = node_range(click)
         self.references.append(
             Reference(path=f.path, start=rng[0], end=rng[1], symbol_id=target.symbol_id)
         )
@@ -799,10 +985,24 @@ def main() -> int:
                 kept_symbols[sid] = stub
         kept_edges.append(e)
 
-    kept_refs = [
-        r for r in resolver.references
-        if r.path in slice_paths and r.symbol_id in kept_symbols
-    ]
+    # references can also cross the boundary (imports, annotations, callbacks);
+    # stub their targets too so the viewer can show the boundary popup
+    for r in resolver.references:
+        if r.path in slice_paths and r.symbol_id not in kept_symbols and r.symbol_id in all_syms:
+            stub = all_syms[r.symbol_id]
+            stub.in_slice = False
+            kept_symbols[r.symbol_id] = stub
+
+    seen_spans: set[tuple] = set()
+    kept_refs: list[Reference] = []
+    for r in resolver.references:
+        if r.path not in slice_paths or r.symbol_id not in kept_symbols:
+            continue
+        span = (r.path, r.start, r.end)
+        if span in seen_spans:
+            continue  # call-site references come first and win over usage references
+        seen_spans.add(span)
+        kept_refs.append(r)
 
     # review mode: symbol-level diff between base and worktree (schema `changes`)
     changes = None
