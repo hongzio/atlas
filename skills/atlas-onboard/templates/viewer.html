@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.9.0 -->
+<!-- atlas-template-version: 0.9.1 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -58,6 +58,27 @@ header h1 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; margin: 
 header .meta {
   color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums;
   display: inline-flex; gap: 14px; flex-wrap: wrap;
+}
+/* many entry points collapse into a dropdown so the header stays one line */
+.eplist { display: inline-block; position: relative; }
+.eplist summary {
+  cursor: pointer; list-style: none; display: inline;
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.eplist summary::-webkit-details-marker { display: none; }
+.eplist summary:hover { color: var(--accent); }
+.eplist[open] summary { color: var(--accent); }
+.eplist ul {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  margin: 0; padding: 8px 12px; list-style: none;
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: var(--r-box); box-shadow: var(--shadow);
+  max-height: 320px; overflow: auto;
+  min-width: 280px; max-width: min(560px, 85vw);
+}
+.eplist li {
+  font-size: 12px; padding: 2px 0; white-space: nowrap;
+  font-family: var(--mono, ui-monospace, monospace);
 }
 nav.tabs { display: flex; gap: 2px; margin-left: auto; }
 nav.tabs button {
@@ -509,11 +530,20 @@ for (const [id, label] of TABS) {
 
 /* ---------------- header/banner/footer ---------------- */
 el("hd-title").textContent = A.title;
+const eps = A.slice.entry_points;
+const epLabel = eps.length <= 3
+  ? esc(eps.join(", "))
+  : `<details class="eplist"><summary>${eps.length} entries</summary><ul>` +
+    eps.map(e => `<li>${esc(e)}</li>`).join("") + `</ul></details>`;
 el("hd-meta").innerHTML = [
   `${esc(A.repository.id)} @ ${esc(A.repository.head_commit.slice(0, 18))}`,
-  `${esc(A.slice.entry_points.join(", "))} +${A.slice.hop_limit} hops`,
+  `${epLabel} +${A.slice.hop_limit} hops`,
   `${A.slice.file_count} files`,
 ].map(x => `<span>${x}</span>`).join("");
+document.addEventListener("click", e => {
+  const open = document.querySelector(".eplist[open]");
+  if (open && !open.contains(e.target)) open.removeAttribute("open");
+});
 if ((A.slice.truncations || []).length) {
   el("banner").style.display = "block";
   el("banner").textContent = "Truncated by slice size budget: " + A.slice.truncations.join("; ");
