@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- atlas-template-version: 0.10.0 -->
+<!-- atlas-template-version: 0.10.2 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1349,14 +1349,70 @@ function renderGraph(nodes, edges, onClick) {
     if (!rows.has(d)) rows.set(d, []);
     rows.get(d).push(n);
   }
-  // Content-driven sizing: no truncation. Monospace text width is chars * em-advance.
-  const textW = (s, size) => (s || "").length * size * 0.62;
-  const nodeH = 40, pad = 30, hGap = 36, minVGap = 56;
+  // Content-driven sizing with a width cap: long text wraps to more lines and
+  // the node grows downward instead of stretching the row sideways.
+  // CJK and other fullwidth characters advance ~1em, latin ~0.62em; width is
+  // summed per character so Korean text wraps where it visually overflows.
+  const charW = ch => {
+    const c = ch.codePointAt(0);
+    return (
+      (c >= 0x1100 && c <= 0x11ff) ||    // hangul jamo
+      (c >= 0x2e80 && c <= 0x9fff) ||    // CJK radicals..unified ideographs, kana
+      (c >= 0xac00 && c <= 0xd7a3) ||    // hangul syllables
+      (c >= 0xf900 && c <= 0xfaff) ||    // CJK compatibility
+      (c >= 0xff00 && c <= 0xff60)       // fullwidth forms
+    ) ? 1.0 : 0.62;
+  };
+  const textW = (s, size) => {
+    let w = 0;
+    for (const ch of String(s || "")) w += charW(ch) * size;
+    return w;
+  };
+  const pad = 30, hGap = 36, minVGap = 56;
+  const MAX_NODE_W = 300, MIN_NODE_W = 140, TEXT_PAD = 26;
   const maxD = Math.max(...rows.keys(), 0);
-  const nodeW = new Map();
+  const wrapText = (s, size, maxW) => {
+    const words = String(s || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = "";
+    const fits = t => textW(t, size) <= maxW;
+    const hardBreak = w => {           // split a single too-wide token
+      let piece = "";
+      for (const ch of w) {
+        if (piece && !fits(piece + ch)) { lines.push(piece); piece = ch; }
+        else piece += ch;
+      }
+      return piece;
+    };
+    for (const w of words) {
+      if (!cur && !fits(w)) { cur = hardBreak(w); continue; }
+      if (!cur) cur = w;
+      else if (fits(cur + " " + w)) cur += " " + w;
+      else {
+        lines.push(cur);
+        cur = fits(w) ? w : hardBreak(w);
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [""];
+  };
+  const nodeLines = new Map();   // id -> {label: [..], sub: [..]}
+  const nodeW = new Map(), nodeH = new Map();
   for (const n of nodes) {
-    nodeW.set(n.id, Math.ceil(
-      Math.max(140, textW(n.label, 11.5) + 26, textW(n.sub, 10) + 26)));
+    const label = wrapText(n.label, 11.5, MAX_NODE_W - TEXT_PAD);
+    const sub = n.sub ? wrapText(n.sub, 10, MAX_NODE_W - TEXT_PAD) : [];
+    nodeLines.set(n.id, { label, sub });
+    const w = Math.max(
+      MIN_NODE_W,
+      ...label.map(l => textW(l, 11.5) + TEXT_PAD),
+      ...sub.map(l => textW(l, 10) + TEXT_PAD),
+    );
+    nodeW.set(n.id, Math.ceil(Math.min(MAX_NODE_W, w)));
+    nodeH.set(n.id, Math.max(40, 12 + label.length * 15 + sub.length * 13 + 7));
+  }
+  const rowH = new Map();
+  for (const [d, list] of rows) {
+    rowH.set(d, Math.max(...list.map(n => nodeH.get(n.id))));
   }
   // stack labeled edges inside their gap so parallel labels never collide
   const gapCount = new Map();
@@ -1373,7 +1429,7 @@ function renderGraph(nodes, edges, onClick) {
   let yCursor = pad;
   for (let d = 0; d <= maxD; d++) {
     rowY.set(d, yCursor);
-    yCursor += nodeH + vGap(d);
+    yCursor += (rowH.get(d) ?? 40) + vGap(d);
   }
   const height = yCursor - vGap(maxD) + pad;
   const rowW = new Map();
@@ -1386,7 +1442,10 @@ function renderGraph(nodes, edges, onClick) {
   for (const [d, list] of rows) {
     let xCursor = pad + (maxRowW - rowW.get(d)) / 2;
     for (const n of list) {
-      pos.set(n.id, { x: xCursor, y: rowY.get(d), w: nodeW.get(n.id) });
+      pos.set(n.id, {
+        x: xCursor, y: rowY.get(d), w: nodeW.get(n.id),
+        h: nodeH.get(n.id), rowBottom: rowY.get(d) + rowH.get(d),
+      });
       xCursor += nodeW.get(n.id) + hGap;
     }
   }
@@ -1401,7 +1460,7 @@ function renderGraph(nodes, edges, onClick) {
   for (const e of edges) {
     const a = pos.get(e.from), b = pos.get(e.to);
     if (!a || !b) continue;
-    const x1 = a.x + a.w / 2, y1 = a.y + nodeH, x2 = b.x + b.w / 2, y2 = b.y;
+    const x1 = a.x + a.w / 2, y1 = a.y + a.h, x2 = b.x + b.w / 2, y2 = b.y;
     const p = document.createElementNS(svgNS, "path");
     const dy = Math.max(24, Math.abs(y2 - y1) / 2);
     p.setAttribute("d", `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`);
@@ -1411,21 +1470,29 @@ function renderGraph(nodes, edges, onClick) {
     if (s) {
       labels.push({
         x: (x1 + x2) / 2,
-        y: rowY.get(s.gap) + nodeH + 24 + s.slot * 15,
+        y: rowY.get(s.gap) + rowH.get(s.gap) + 24 + s.slot * 15,
         text: e.label,
       });
     }
   }
   for (const n of nodes) {
-    const { x, y, w } = pos.get(n.id);
+    const { x, y, w, h } = pos.get(n.id);
+    const { label, sub } = nodeLines.get(n.id);
     const g = document.createElementNS(svgNS, "g");
     g.setAttribute("class", "node" + (n.stub ? " stub" : ""));
     g.setAttribute("transform", `translate(${x},${y})`);
-    const sub = n.sub || "";
-    g.innerHTML =
-      `<rect width="${w}" height="${nodeH}" rx="7"></rect>` +
-      `<text x="10" y="${sub ? 17 : 24}" class="node-label">${esc(n.label)}</text>` +
-      (sub ? `<text x="10" y="31" class="node-sub">${esc(sub)}</text>` : "");
+    let texts = "";
+    let ty = sub.length || label.length > 1 ? 17 : h / 2 + 4;
+    for (const line of label) {
+      texts += `<text x="10" y="${ty}" class="node-label">${esc(line)}</text>`;
+      ty += 15;
+    }
+    ty -= 1;
+    for (const line of sub) {
+      texts += `<text x="10" y="${ty}" class="node-sub">${esc(line)}</text>`;
+      ty += 13;
+    }
+    g.innerHTML = `<rect width="${w}" height="${h}" rx="7"></rect>` + texts;
     g.style.cursor = "pointer";
     g.addEventListener("click", () => onClick(n.id));
     svg.appendChild(g);
